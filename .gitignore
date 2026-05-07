@@ -16,3 +16,4 @@ data/**/*.b64
 
 logs/
 *.log
+*.egg-info/
