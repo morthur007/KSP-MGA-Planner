@@ -1,59 +1,53 @@
-"""Stable wrapper around PyKEP/kep3 Lambert.
-
-Do not import PyKEP directly across the project. Use this module so we can keep
-version differences and solution indexing in one place.
-"""
+# pykep_gateway_v0_1.py
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import List
 
 import numpy as np
+import pykep as pk
 
 
-@dataclass(frozen=True)
+@dataclass
 class LambertSolution:
     v0_km_s: np.ndarray
     v1_km_s: np.ndarray
     path_label: str
     revs: int
     index: int
-    cw: bool
-
-
-def _label_for_index(i: int, cw: bool) -> tuple[str, int]:
-    if i == 0:
-        return f"0rev_cw{int(cw)}", 0
-    # PyKEP convention: for each revolution there are two solutions. The exact
-    # left/right ordering can vary in wrappers, but this label is kept stable for
-    # our own pipeline because we consume the saved velocities, not the label.
-    revs = (i + 1) // 2
-    branch = "left" if i % 2 == 1 else "right"
-    return f"{branch}_cw{int(cw)}", revs
 
 
 def solve_lambert_pykep(
-    r0_km: Sequence[float],
-    r1_km: Sequence[float],
+    r0_km,
+    r1_km,
     tof_s: float,
     mu_km3_s2: float,
     *,
     cw: bool = False,
     max_revs: int = 0,
 ) -> List[LambertSolution]:
-    try:
-        import pykep as pk
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError("pykep is required for solve_lambert_pykep") from e
+    """
+    Thin compatibility layer around PyKEP/kep3 Lambert.
 
+    Units:
+      r0/r1: km
+      tof: seconds
+      mu: km^3/s^2
+      output velocities: km/s
+    """
+    r0 = np.asarray(r0_km, dtype=float)
+    r1 = np.asarray(r1_km, dtype=float)
+
+    # Chamada posicional blindada: (r1, r2, tof, mu, cw, max_revs)
+    # Evita conflitos de nomes (kwargs) com a assinatura do C++
     lp = pk.lambert_problem(
-        r0=list(map(float, r0_km)),
-        r1=list(map(float, r1_km)),
-        tof=float(tof_s),
-        mu=float(mu_km3_s2),
-        cw=bool(cw),
-        max_revs=int(max_revs),
+        r0.tolist(),
+        r1.tolist(),
+        float(tof_s),
+        float(mu_km3_s2),
+        bool(cw),
+        int(max_revs)
     )
 
     if hasattr(lp, "get_v1"):
@@ -63,17 +57,23 @@ def solve_lambert_pykep(
         v0s = lp.v0
         v1s = lp.v1
 
-    out: list[LambertSolution] = []
+    out: List[LambertSolution] = []
     for i, (v0, v1) in enumerate(zip(v0s, v1s)):
-        label, revs = _label_for_index(i, cw)
+        if i == 0:
+            revs = 0
+            branch = "0rev"
+        else:
+            revs = (i + 1) // 2
+            branch = "left" if i % 2 == 1 else "right"
+
         out.append(
             LambertSolution(
                 v0_km_s=np.asarray(v0, dtype=float),
                 v1_km_s=np.asarray(v1, dtype=float),
-                path_label=label,
+                path_label=f"{branch}_cw{int(cw)}",
                 revs=revs,
                 index=i,
-                cw=bool(cw),
             )
         )
+
     return out
