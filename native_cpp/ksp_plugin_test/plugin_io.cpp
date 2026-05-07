@@ -1,0 +1,124 @@
+#include "ksp_plugin_test/plugin_io.hpp"
+
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "base/file.hpp"
+#include "base/pull_serializer.hpp"
+#include "base/push_deserializer.hpp"
+#include "ksp_plugin/interface.hpp"  // 🧙 For interface functions.
+#include "ksp_plugin/plugin_reader.hpp"
+#include "testing_utilities/serialization.hpp"
+
+namespace principia {
+namespace ksp_plugin_test {
+namespace _plugin_io {
+namespace internal {
+
+constexpr std::string_view preferred_compressor = "gipfeli";
+constexpr std::string_view preferred_encoder = "base64";
+
+using interface::principia__DeletePlugin;
+using interface::principia__DeleteString;
+using interface::principia__DeserializePlugin;
+using interface::principia__PluginReaderAwait;
+using interface::principia__SerializePlugin;
+using namespace principia::base::_file;
+using namespace principia::base::_pull_serializer;
+using namespace principia::base::_push_deserializer;
+using namespace principia::ksp_plugin::_plugin_reader;
+using namespace principia::testing_utilities::_serialization;
+
+not_null<std::unique_ptr<Plugin const>> ReadPluginFromFile(
+    std::filesystem::path const& filename,
+    std::string_view const compressor,
+    std::string_view const encoder) {
+  std::int64_t bytes_processed;
+  return ReadPluginFromFile(filename, compressor, encoder, bytes_processed);
+}
+
+not_null<std::unique_ptr<Plugin const>> ReadPluginFromFile(
+    std::filesystem::path const& filename,
+    std::string_view const compressor,
+    std::string_view const encoder,
+    std::int64_t& bytes_processed) {
+  PluginReader* plugin_reader = nullptr;
+
+  PushDeserializer* deserializer = nullptr;
+  auto const lines =
+      encoder == "hexadecimal" ? ReadLinesFromHexadecimalFile(filename)
+      : encoder == "base64"    ? ReadLinesFromBase64File(filename)
+                               : std::vector<std::string>{};
+  CHECK(!lines.empty());
+
+  LOG(ERROR) << "Deserialization starting";
+  bytes_processed = 0;
+  for (std::string const& line : lines) {
+    principia__DeserializePlugin(line.c_str(),
+                                 &deserializer,
+                                 &plugin_reader,
+                                 compressor.data(),
+                                 encoder.data());
+    bytes_processed += line.size();
+  }
+  principia__DeserializePlugin("",
+                               &deserializer,
+                               &plugin_reader,
+                               compressor.data(),
+                               encoder.data());
+  LOG(ERROR) << "Deserialization complete";
+
+  return std::unique_ptr<Plugin const>(
+      principia__PluginReaderAwait(&plugin_reader));
+}
+
+void WritePluginToFile(std::filesystem::path const& filename,
+                       std::string_view const compressor,
+                       std::string_view const encoder,
+                       not_null<std::unique_ptr<Plugin const>> plugin) {
+  std::int64_t bytes_processed;
+  WritePluginToFile(
+      filename, compressor, encoder, std::move(plugin), bytes_processed);
+}
+
+void WritePluginToFile(std::filesystem::path const& filename,
+                       std::string_view const /*compressor*/,
+                       std::string_view const /*encoder*/,
+                       not_null<std::unique_ptr<Plugin const>> plugin,
+                       std::int64_t& bytes_processed) {
+  OFStream file(filename);
+  PullSerializer* serializer = nullptr;
+  char const* b64 = nullptr;
+
+  LOG(ERROR) << "Serialization starting";
+  bytes_processed = 0;
+  for (;;) {
+    b64 = principia__SerializePlugin(plugin.get(),
+                                     &serializer,
+                                     preferred_compressor.data(),
+                                     preferred_encoder.data());
+    if (b64 == nullptr) {
+      break;
+    }
+    bytes_processed += std::strlen(b64);
+    file << b64 << "\n";
+    principia__DeleteString(&b64);
+  }
+  LOG(ERROR) << "Serialization complete";
+
+  Plugin const* released_plugin = plugin.release();
+  principia__DeletePlugin(&released_plugin);
+}
+
+}  // namespace internal
+}  // namespace _plugin_io
+}  // namespace ksp_plugin_test
+}  // namespace principia

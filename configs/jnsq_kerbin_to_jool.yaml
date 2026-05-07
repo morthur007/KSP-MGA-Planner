@@ -1,0 +1,35 @@
+mission: jnsq_kerbin_to_jool
+
+kernels:
+  bsp: data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.bsp
+  tpc: data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.ids.tpc
+  metadata: data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.metadata.json
+
+catalogs:
+  body_catalog: data/catalogs/jnsq/body_catalog.json
+
+principia:
+  plugin_b64: data/principia/principia_serialized_plugin.b64
+  impulse_server: principia_impulsive_particle_server
+
+frames:
+  canonical_to_principia_raw: "+Z,-X,+Y"
+
+search:
+  origin: Kerbin
+  target: Jool
+  allowed_flybys: [Kerbin, Eve, Duna]
+  max_flybys: 3
+  start_et_s: 81.85168640136972
+  search_years: 30
+  t0_step_days: 20
+  max_revs: 1
+
+triage:
+  candidate_csv: data/candidates/jool/family_search_kj_v0_1.csv
+  ranks: [1, 4, 7, 12, 15, 18]
+  jobs: 8
+  buffer_days: 0.235
+
+output:
+  work_dir: data/runs/jnsq_kerbin_to_jool

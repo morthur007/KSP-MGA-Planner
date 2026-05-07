@@ -1,0 +1,18 @@
+[project]
+name = "ksp-mga"
+version = "0.1.0"
+description = "Offline-first MGA route planning pipeline for KSP/Principia"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pyyaml",
+]
+
+[project.optional-dependencies]
+spice = ["spiceypy"]
+pykep = ["pykep"]
+opt = ["scipy"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ksp_mga*"]
