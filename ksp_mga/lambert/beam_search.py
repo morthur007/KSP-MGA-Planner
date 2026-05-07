@@ -380,6 +380,15 @@ def row_for_route(route: Route) -> Dict[str, object]:
     for i, leg in enumerate(route.legs, start=1):
         row[f"leg{i}_path"] = leg.path
         row[f"leg{i}_tof_days"] = leg.tof_days
+
+        # Exact PyKEP Lambert seed velocities. Downstream N-body refinement
+        # must consume these directly instead of re-solving Lambert.
+        row[f"leg{i}_vdep_x_km_s"] = float(leg.v_dep_km_s[0])
+        row[f"leg{i}_vdep_y_km_s"] = float(leg.v_dep_km_s[1])
+        row[f"leg{i}_vdep_z_km_s"] = float(leg.v_dep_km_s[2])
+        row[f"leg{i}_varr_x_km_s"] = float(leg.v_arr_km_s[0])
+        row[f"leg{i}_varr_y_km_s"] = float(leg.v_arr_km_s[1])
+        row[f"leg{i}_varr_z_km_s"] = float(leg.v_arr_km_s[2])
         # === A SUA SUGESTÃO: SALVANDO O VETOR EXATO ===
         row[f"leg{i}_vdep_x_km_s"] = leg.v_dep_km_s[0]
         row[f"leg{i}_vdep_y_km_s"] = leg.v_dep_km_s[1]
