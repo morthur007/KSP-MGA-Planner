@@ -214,6 +214,7 @@ def main() -> int:
     p.add_argument("--transform", default="+Z,-X,+Y")
     p.add_argument("--buffer-days", type=float, default=0.235)
     p.add_argument("--output-json", type=Path, default=None)
+    p.add_argument("--server-time-offset-s", type=float, default=0.0)
 
     args = p.parse_args()
 
@@ -290,9 +291,9 @@ def main() -> int:
     with PrincipiaImpulseServer(args.server, args.plugin_b64) as srv:
         res = srv.propagate(
             req_id=f"smoke_rank{args.rank}_leg{leg}",
-            t0_s=t_start,
-            burn_t_s=t_start,
-            t1_s=t_end,
+            t0_s=t_start + args.server_time_offset_s,
+            burn_t_s=t_start + args.server_time_offset_s,
+            t1_s=t_end + args.server_time_offset_s,
             r0_m=r0_raw_m,
             v0_m_s=v0_raw_m_s,
             burn_dv_m_s=np.zeros(3),
