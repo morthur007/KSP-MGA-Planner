@@ -1,0 +1,290 @@
+{
+  "Aden": {
+    "name": "Aden",
+    "gravitational_parameter": 61781895000.000015,
+    "mass": 9.256990476590033e+20,
+    "equatorial_radius": 300000.0,
+    "rotational_period": 286875.24899704044,
+    "sphere_of_influence": 2741351.5367178097,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953af90>"
+  },
+  "Amos": {
+    "name": "Amos",
+    "gravitational_parameter": 60252057599.99999,
+    "mass": 9.027769760026848e+20,
+    "equatorial_radius": 320000.0,
+    "rotational_period": 232809.99738773933,
+    "sphere_of_influence": 2615741.8427581107,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953af90>"
+  },
+  "Bop": {
+    "name": "Bop",
+    "gravitational_parameter": 17701003250.0,
+    "mass": 2.6522012397214296e+20,
+    "equatorial_radius": 190000.0,
+    "rotational_period": -1978081.287819,
+    "sphere_of_influence": 5552918.821056443,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953af90>"
+  },
+  "Celes": {
+    "name": "Celes",
+    "gravitational_parameter": 15690640000.0,
+    "mass": 2.3509817083403256e+20,
+    "equatorial_radius": 200000.0,
+    "rotational_period": 1548329.2940897108,
+    "sphere_of_influence": 7782472.757601689,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953af90>"
+  },
+  "Dak": {
+    "name": "Dak",
+    "gravitational_parameter": 31381280.0,
+    "mass": 4.701963416680651e+17,
+    "equatorial_radius": 20000.0,
+    "rotational_period": 284235.7872186212,
+    "sphere_of_influence": 243985.32028465412,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953af90>"
+  },
+  "Dres": {
+    "name": "Dres",
+    "gravitational_parameter": 152513020799.99997,
+    "mass": 2.285154220506796e+21,
+    "equatorial_radius": 360000.0,
+    "rotational_period": 16200.0,
+    "sphere_of_influence": 90298417.96941411,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953af90>"
+  },
+  "Duna": {
+    "name": "Duna",
+    "gravitational_parameter": 2133927040000.0,
+    "mass": 3.1973351233428426e+22,
+    "equatorial_radius": 800000.0,
+    "rotational_period": 50400.0,
+    "sphere_of_influence": 131664484.71863492,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a790>"
+  },
+  "Edna": {
+    "name": "Edna",
+    "gravitational_parameter": 53034363200.0,
+    "mass": 7.9463181741903e+20,
+    "equatorial_radius": 260000.0,
+    "rotational_period": 10800.0,
+    "sphere_of_influence": 49408743.240431264,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a790>"
+  },
+  "Eeloo": {
+    "name": "Eeloo",
+    "gravitational_parameter": 529559100000.0,
+    "mass": 7.934563265648599e+21,
+    "equatorial_radius": 600000.0,
+    "rotational_period": 28800.0,
+    "sphere_of_influence": 621195295.7160125,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a790>"
+  },
+  "Enon": {
+    "name": "Enon",
+    "gravitational_parameter": 720788775000.0,
+    "mass": 1.079982222268837e+22,
+    "equatorial_radius": 700000.0,
+    "rotational_period": 788078.4208474532,
+    "sphere_of_influence": 15913823.574609488,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a790>"
+  },
+  "Eve": {
+    "name": "Eve",
+    "gravitational_parameter": 57697425274999.99,
+    "mass": 8.64500055063769e+23,
+    "equatorial_radius": 2050000.0,
+    "rotational_period": 81000.0,
+    "sphere_of_influence": 233567240.5801821,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a790>"
+  },
+  "Gilly": {
+    "name": "Gilly",
+    "gravitational_parameter": 66194887.499999985,
+    "mass": 9.918204082060746e+17,
+    "equatorial_radius": 30000.0,
+    "rotational_period": 670318.5348402314,
+    "sphere_of_influence": 365583.78394851263,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a790>"
+  },
+  "Hamek": {
+    "name": "Hamek",
+    "gravitational_parameter": 198584662500.0,
+    "mass": 2.975461224618224e+21,
+    "equatorial_radius": 450000.0,
+    "rotational_period": 14400.0,
+    "sphere_of_influence": 469438544.92444366,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a550>"
+  },
+  "Huygen": {
+    "name": "Huygen",
+    "gravitational_parameter": 660330777750.0,
+    "mass": 9.893959583193488e+21,
+    "equatorial_radius": 670000.0,
+    "rotational_period": 664152.0612830064,
+    "sphere_of_influence": 12375834.324228296,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a550>"
+  },
+  "Ike": {
+    "name": "Ike",
+    "gravitational_parameter": 25948395899.999996,
+    "mass": 3.887936000167813e+20,
+    "equatorial_radius": 210000.0,
+    "rotational_period": 955507.4455924762,
+    "sphere_of_influence": 6286395.586009538,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a550>"
+  },
+  "Jool": {
+    "name": "Jool",
+    "gravitational_parameter": 1998987536000000.0,
+    "mass": 2.9951506964255746e+25,
+    "equatorial_radius": 14000000.0,
+    "rotational_period": 19800.0,
+    "sphere_of_influence": 6745648454.989384,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a550>"
+  },
+  "Kerbin": {
+    "name": "Kerbin",
+    "gravitational_parameter": 25105024000000.0,
+    "mass": 3.7615707333445206e+23,
+    "equatorial_radius": 1600000.0,
+    "rotational_period": 43081.96721311475,
+    "sphere_of_influence": 231587977.95636657,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a550>"
+  },
+  "Krel": {
+    "name": "Krel",
+    "gravitational_parameter": 6619488749.999999,
+    "mass": 9.918204082060747e+19,
+    "equatorial_radius": 150000.0,
+    "rotational_period": 116041.15445521128,
+    "sphere_of_influence": 613615.0375682309,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a550>"
+  },
+  "Laythe": {
+    "name": "Laythe",
+    "gravitational_parameter": 6882306969999.999,
+    "mass": 1.031199351820775e+23,
+    "equatorial_radius": 1100000.0,
+    "rotational_period": 115299.75343623257,
+    "sphere_of_influence": 9067174.004441231,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Lindor": {
+    "name": "Lindor",
+    "gravitational_parameter": 589968063999999.9,
+    "mass": 8.839691223359622e+24,
+    "equatorial_radius": 8000000.0,
+    "rotational_period": 25200.0,
+    "sphere_of_influence": 7845120421.877265,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Minmus": {
+    "name": "Minmus",
+    "gravitational_parameter": 12552512000.0,
+    "mass": 1.8807853666722605e+20,
+    "equatorial_radius": 160000.0,
+    "rotational_period": 561810.5586073262,
+    "sphere_of_influence": 2799721.943135333,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Moho": {
+    "name": "Moho",
+    "gravitational_parameter": 1201559791249.9998,
+    "mass": 1.8003377113399896e+22,
+    "equatorial_radius": 650000.0,
+    "rotational_period": 2530758.15664,
+    "sphere_of_influence": 26571746.745299827,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Mun": {
+    "name": "Mun",
+    "gravitational_parameter": 227514279999.99997,
+    "mass": 3.408923477093471e+21,
+    "equatorial_radius": 400000.0,
+    "rotational_period": 1139938.8278768295,
+    "sphere_of_influence": 14298392.249277717,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Nara": {
+    "name": "Nara",
+    "gravitational_parameter": 127094184000000.02,
+    "mass": 1.9042951837556637e+24,
+    "equatorial_radius": 3600000.0,
+    "rotational_period": 43200.0,
+    "sphere_of_influence": 20213316972.17062,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Pol": {
+    "name": "Pol",
+    "gravitational_parameter": 4971971549.999999,
+    "mass": 7.449673288303405e+19,
+    "equatorial_radius": 130000.0,
+    "rotational_period": 18000.0,
+    "sphere_of_influence": 4238401.609946894,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee953a2d0>"
+  },
+  "Prax": {
+    "name": "Prax",
+    "gravitational_parameter": 2373209300.0,
+    "mass": 3.555859833864742e+19,
+    "equatorial_radius": 110000.0,
+    "rotational_period": 21600.0,
+    "sphere_of_influence": 9652598.244948449,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539f90>"
+  },
+  "Riga": {
+    "name": "Riga",
+    "gravitational_parameter": 992923312500.0001,
+    "mass": 1.4877306123091123e+22,
+    "equatorial_radius": 750000.0,
+    "rotational_period": 1407680.0945273684,
+    "sphere_of_influence": 24039593.344883334,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539f90>"
+  },
+  "Sun": {
+    "name": "Sun",
+    "gravitational_parameter": 8.390563181802812e+18,
+    "mass": 1.257186485898103e+29,
+    "equatorial_radius": 175750000.0,
+    "rotational_period": 1080000.0,
+    "sphere_of_influence": Infinity,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539f90>"
+  },
+  "Talos": {
+    "name": "Talos",
+    "gravitational_parameter": 269682875000.0,
+    "mass": 4.0407498112099345e+21,
+    "equatorial_radius": 500000.0,
+    "rotational_period": 3573035.4844202376,
+    "sphere_of_influence": 26557738.36816749,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539f90>"
+  },
+  "Tam": {
+    "name": "Tam",
+    "gravitational_parameter": 3432327.5,
+    "mass": 5.1427724869944616e+16,
+    "equatorial_radius": 10000.0,
+    "rotational_period": 4490316.383640186,
+    "sphere_of_influence": 543716.5778129243,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539f90>"
+  },
+  "Tylo": {
+    "name": "Tylo",
+    "gravitational_parameter": 2541883680000.0,
+    "mass": 3.808590367511327e+22,
+    "equatorial_radius": 900000.0,
+    "rotational_period": 704636.4074863789,
+    "sphere_of_influence": 20348468.910313632,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539d90>"
+  },
+  "Vall": {
+    "name": "Vall",
+    "gravitational_parameter": 533972092500.0,
+    "mass": 8.00068462619567e+21,
+    "equatorial_radius": 550000.0,
+    "rotational_period": 285030.0009607105,
+    "sphere_of_influence": 5962483.9371094955,
+    "reference_frame": "<krpc.services.spacecenter.ReferenceFrame object at 0x7fcee9539d90>"
+  }
+}

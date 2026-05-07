@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+.env/
+
+# Big generated data
+data/runs/
+data/**/*.csv
+data/**/*.bsp
+data/**/*.b64
+
+# Keep small metadata/configs trackable if manually added
+!data/**/*.json
+!data/**/*.tpc
+!data/candidates/**/*.csv
+
+logs/
+*.log

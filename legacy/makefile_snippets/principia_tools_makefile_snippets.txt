@@ -1,0 +1,41 @@
+bin/x64/dump_plugin_message: obj/x64/ksp_plugin_test/dump_plugin_message.o \
+                             obj/x64/ksp_plugin_test/plugin_io.o \
+                             $(filter-out %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+	
+bin/x64/dump_current_snapshot: obj/x64/ksp_plugin_test/dump_current_snapshot.o \
+                               obj/x64/ksp_plugin_test/plugin_io.o \
+                               $(filter-out %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+	
+bin/x64/sample_principia_ephemeris: obj/x64/ksp_plugin_test/sample_principia_ephemeris.o \
+                                    obj/x64/ksp_plugin_test/plugin_io.o \
+                                    $(filter-out %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+	
+bin/x64/principia_sample_binary_chunks: obj/x64/ksp_plugin_test/principia_sample_binary_chunks.o \
+                                        obj/x64/ksp_plugin_test/plugin_io.o \
+                                        $(filter-out %sample_principia_ephemeris.o %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+	
+bin/x64/principia_particle_validator: obj/x64/ksp_plugin_test/principia_particle_validator.o \
+                                      obj/x64/ksp_plugin_test/plugin_io.o \
+                                      $(filter-out %principia_sample_binary_chunks.o %sample_principia_ephemeris.o %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+	
+bin/x64/principia_impulsive_particle_validator: obj/x64/ksp_plugin_test/principia_impulsive_particle_validator.o \
+                                                obj/x64/ksp_plugin_test/plugin_io.o \
+                                                $(filter-out %principia_particle_validator.o %principia_sample_binary_chunks.o %sample_principia_ephemeris.o %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+	
+bin/x64/principia_impulsive_particle_server: obj/x64/ksp_plugin_test/principia_impulsive_particle_server.o \
+                                             obj/x64/ksp_plugin_test/plugin_io.o \
+                                             $(filter-out %principia_impulsive_particle_validator.o %principia_particle_validator.o %principia_sample_binary_chunks.o %sample_principia_ephemeris.o %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
