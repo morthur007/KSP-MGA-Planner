@@ -56,12 +56,12 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-from pykep_gateway_v0_1 import solve_lambert_pykep
+from ksp_mga.lambert.pykep_gateway import solve_lambert_pykep
 
 import numpy as np
 import spiceypy as spice
 
-from spice_lambert_mga_v0_1 import (
+from ksp_mga.lambert._legacy_mga import (
     DAY_S,
     BodyInfo,
     lambert_universal_zero_rev,
