@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
+  "has_flight_plan": true,
+  "flight_plan_count": 1,
+  "selected_flight_plan": 0,
+  "flight_plan": {
+    "initial_time": 4266425.0209911689,
+    "desired_final_time": 4270756.424537994,
+    "actual_final_time": 4270756.424537994
+  },
+  "manoeuvre_count": 1,
+  "anomalous_manoeuvre_count": 0,
+  "segment_count": 3,
+  "vessel_frame": {
+    "velocity": [3134.6703668612254, -6.2515846366295591e-07, -2180.0994868573093],
+    "tangent": [0.82097158975483886, -1.6372936340047772e-10, -0.57096904365772161],
+    "normal": [0.57096904365772161, -1.7842124444555907e-09, 0.82097158975483864],
+    "binormal": [1.153147355381634e-09, 1.0000000000000002, 1.3713037372298231e-09]
+  }
+}
