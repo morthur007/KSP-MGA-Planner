@@ -1,0 +1,11 @@
+{
+  "status": "ok",
+  "input_plugin": "data/principia/live_probe/principia_serialized_plugin_rocket.b64",
+  "output_plugin": "data/principia/live_probe/copywrite/principia_serialized_plugin_rocket_dummy_insert.b64",
+  "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
+  "manoeuvre_count_before": 1,
+  "manoeuvre_count_after": 2,
+  "inserted_index": 1,
+  "inserted_dt_s": 30,
+  "inserted_delta_v_navigation_m_s": [1, 0, 0]
+}
