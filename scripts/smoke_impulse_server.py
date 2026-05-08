@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import math
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -140,6 +141,71 @@ def spk_state(body: str, et_s: float, central_body: str) -> np.ndarray:
     return np.asarray(st, dtype=float)
 
 
+def sample_raw_body_state(
+    *,
+    sampler: str,
+    plugin_b64: Path,
+    target_body: str,
+    sampler_central_body: str,
+    et_s: float,
+    plugin_base_et_s: float,
+    work_dir: Path,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return Principia raw/Barycentric absolute state of target_body at et_s.
+
+    sample_principia_ephemeris exports both:
+      x_m/y_m/z_m       = LevelA transformed, relative to sampler_central_body
+      raw_x_m/...       = Principia Barycentric raw absolute
+
+    The impulse server expects the raw/Barycentric absolute state.
+    """
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_t = f"{et_s:.6f}".replace(".", "p").replace("-", "m")
+    out_csv = work_dir / f"raw_{norm_name(target_body)}_{safe_t}.csv"
+
+    offset_s = et_s - plugin_base_et_s
+
+    cmd = [
+        sampler,
+        str(plugin_b64),
+        str(out_csv),
+        sampler_central_body,
+        f"{offset_s:.17g}",
+        "0",
+        "21600",
+    ]
+
+    subprocess.run(
+        cmd,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+
+    with out_csv.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    target = norm_name(target_body)
+    for row in rows:
+        if norm_name(row["body"]) == target:
+            r = np.array([
+                float(row["raw_x_m"]),
+                float(row["raw_y_m"]),
+                float(row["raw_z_m"]),
+            ], dtype=float)
+            v = np.array([
+                float(row["raw_vx_m_s"]),
+                float(row["raw_vy_m_s"]),
+                float(row["raw_vz_m_s"]),
+            ], dtype=float)
+            return r, v
+
+    raise RuntimeError(f"body {target_body!r} not found in {out_csv}")
+
+
 def read_candidate(path: Path, rank: int) -> dict[str, str]:
     with path.open(newline="") as f:
         rows = list(csv.DictReader(f))
@@ -211,6 +277,10 @@ def main() -> int:
 
     p.add_argument("--plugin-b64", type=Path, required=True)
     p.add_argument("--server", default="principia_impulsive_particle_server")
+    p.add_argument("--sampler", default="sample_principia_ephemeris")
+    p.add_argument("--plugin-base-et-s", type=float, default=81.65168640136972)
+    p.add_argument("--raw-origin-body", default="Sun")
+    p.add_argument("--raw-cache-dir", type=Path, default=Path("data/runs/frame_debug/raw_cache"))
     p.add_argument("--transform", default="+Z,-X,+Y")
     p.add_argument("--buffer-days", type=float, default=0.235)
     p.add_argument("--output-json", type=Path, default=None)
@@ -271,11 +341,35 @@ def main() -> int:
 
     transform = parse_transform(args.transform)
 
-    r0_raw_m = apply_transform(r_start_km * 1000.0, transform)
-    v0_raw_m_s = apply_transform(v_start_km_s * 1000.0, transform)
+    # SPICE/PyKEP states are LevelA and relative to central_body.
+    # The impulse server expects Principia raw/Barycentric absolute states.
+    # Therefore:
+    #   raw_abs = raw_origin_abs + LevelA_to_raw(relative_state)
+    origin_start_r_raw_m, origin_start_v_raw_m_s = sample_raw_body_state(
+        sampler=args.sampler,
+        plugin_b64=args.plugin_b64,
+        target_body=args.raw_origin_body,
+        sampler_central_body=args.raw_origin_body,
+        et_s=t_start,
+        plugin_base_et_s=args.plugin_base_et_s,
+        work_dir=args.raw_cache_dir,
+    )
 
-    target_r_raw_m = apply_transform(target_st[:3] * 1000.0, transform)
-    target_v_raw_m_s = apply_transform(target_st[3:] * 1000.0, transform)
+    origin_end_r_raw_m, origin_end_v_raw_m_s = sample_raw_body_state(
+        sampler=args.sampler,
+        plugin_b64=args.plugin_b64,
+        target_body=args.raw_origin_body,
+        sampler_central_body=args.raw_origin_body,
+        et_s=t_end,
+        plugin_base_et_s=args.plugin_base_et_s,
+        work_dir=args.raw_cache_dir,
+    )
+
+    r0_raw_m = origin_start_r_raw_m + apply_transform(r_start_km * 1000.0, transform)
+    v0_raw_m_s = origin_start_v_raw_m_s + apply_transform(v_start_km_s * 1000.0, transform)
+
+    target_r_raw_m = origin_end_r_raw_m + apply_transform(target_st[:3] * 1000.0, transform)
+    target_v_raw_m_s = origin_end_v_raw_m_s + apply_transform(target_st[3:] * 1000.0, transform)
 
     print("=== SMOKE IMPULSE SERVER ===")
     print(f"candidate : {row.get('candidate_id', '')} rank={args.rank}")
@@ -285,7 +379,9 @@ def main() -> int:
     print(f"t_end     : {t_end:.9f}")
     print(f"duration  : {(t_end - t_start) / DAY_S:.6f} d")
     print(f"mu        : {mu:.17g} km^3/s^2")
-    print(f"transform : {args.transform}")
+    print(f"transform : {args.transform}")    
+    print(f"raw origin: {args.raw_origin_body}")    
+    print(f"base ET   : {args.plugin_base_et_s:.12f}")
     print("[INFO] launching Principia impulse server...")
 
     with PrincipiaImpulseServer(args.server, args.plugin_b64) as srv:
