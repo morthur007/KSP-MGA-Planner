@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "request_id": "ping_reset_CHANGE_ME",
+  "mode": "reset_bridge_state",
+  "force_nonce": "CHANGE_ME"
+}

@@ -1,0 +1,67 @@
+{
+  "status": "ok",
+  "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
+  "has_flight_plan": true,
+  "flight_plan_count": 1,
+  "selected_flight_plan": 0,
+  "flight_plan": {
+    "initial_time": 4266425.0209911689,
+    "desired_final_time": 4270756.424537994,
+    "actual_final_time": 4270756.424537994
+  },
+  "manoeuvre_count": 2,
+  "anomalous_manoeuvre_count": 0,
+  "segment_count": 5,
+  "manoeuvres": [
+    {
+      "index": 0,
+      "initial_time": 4268474.0376654547,
+      "final_time": 4268474.3838799689,
+      "duration": 0.34621451449360313,
+      "time_of_half_delta_v": 4268474.2123281388,
+      "time_to_half_delta_v": 0.17466268408531796,
+      "thrust_kN": 2686.8770122528076,
+      "specific_impulse_s_g0": 1000,
+      "is_inertially_fixed": false,
+      "initial_mass_tonnes": 2.6868770122528076,
+      "final_mass_tonnes": 2.5920193574674193,
+      "mass_flow": 273.98520516718838,
+      "delta_v_navigation_m_s": [352.47365991851751, 0, 0],
+      "delta_v_norm_m_s": 352.47365991851751,
+      "initial_plotted_velocity": [-2893.7588347372848, 4.4454210410549422e-05, -2491.0152522596904],
+      "frenet_trihedron": {
+      "tangent": [-0.75787661777013893, 1.1642575792336629e-08, -0.65239790943663722],
+      "normal": [0.65239790943663722, 7.1469541396140812e-10, -0.75787661777013893],
+      "binormal": [8.3573701847861059e-09, 0.99999999999999989, 8.137243101558056e-09]
+      }
+    },
+    {
+      "index": 1,
+      "initial_time": 4268504.0376654547,
+      "final_time": 4268504.0386301018,
+      "duration": 0.00096464676050702497,
+      "time_of_half_delta_v": 4268504.0381477904,
+      "time_to_half_delta_v": 0.00048233567607827742,
+      "thrust_kN": 2686.8770122528076,
+      "specific_impulse_s_g0": 1000,
+      "is_inertially_fixed": false,
+      "initial_mass_tonnes": 2.5920193574674193,
+      "final_mass_tonnes": 2.5917550585268283,
+      "mass_flow": 273.98520516718838,
+      "delta_v_navigation_m_s": [1.0000000000003602, 0, 0],
+      "delta_v_norm_m_s": 1.0000000000003602,
+      "initial_plotted_velocity": [-2988.3100712762489, 4.8624734063196229e-05, -2907.3348862360476],
+      "frenet_trihedron": {
+      "tangent": [-0.71675111116710777, 1.1662722843031048e-08, -0.69732907915898379],
+      "normal": [0.6973290791589839, -5.3578474989990355e-11, -0.71675111116710788],
+      "binormal": [8.396631390183984e-09, 1, 8.0943534097599468e-09]
+      }
+    }
+  ],
+  "vessel_frame": {
+    "velocity": [3134.6703668612254, -6.2515846366295591e-07, -2180.0994868573093],
+    "tangent": [0.82097158975483886, -1.6372936340047772e-10, -0.57096904365772161],
+    "normal": [0.57096904365772161, -1.7842124444555907e-09, 0.82097158975483864],
+    "binormal": [1.153147355381634e-09, 1.0000000000000002, 1.3713037372298231e-09]
+  }
+}

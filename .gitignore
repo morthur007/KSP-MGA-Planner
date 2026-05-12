@@ -9,6 +9,8 @@ data/**/*.csv
 data/**/*.bsp
 data/**/*.b64
 
+native_cpp/bin
+
 # Keep small metadata/configs trackable if manually added
 !data/**/*.json
 !data/**/*.tpc

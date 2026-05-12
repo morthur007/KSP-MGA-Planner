@@ -8,22 +8,70 @@ using UnityEngine;
 
 [KSPAddon(KSPAddon.Startup.Flight, false)]
 public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
-  private static string lastRequestId = "";
-  private static double nextPollUt = 0.0;
-  private const double PollPeriodS = 1.0;
+  private static MGAPrincipiaBridgeMissionEventDaemon instance = null;
 
-  public void Start() {
-    DontDestroyOnLoad(this);
-    Log("MGAPrincipiaBridgeMissionEventDaemon.Start");
+  private static string lastRequestId = "";
+  // IMPORTANT: Polling must use real time, not UT.  When a save is reloaded at an
+  // earlier UT, a static UT gate can suppress polling for hours of in-game time.
+  private static double nextPollRealtime = 0.0;
+  private static double nextHeartbeatRealtime = 0.0;
+  private const double PollPeriodS = 1.0;
+  private const double HeartbeatPeriodS = 10.0;
+
+  public void Awake() {
+    // Reset volatile daemon state on every Flight scene start/reload.
+    // Doing this before the instance check ensures that even duplicate components
+    // reset the static variables before they are destroyed by the singleton check.
+    lastRequestId = "";
+    nextPollRealtime = 0.0;
+    nextHeartbeatRealtime = 0.0;
+
+    if (instance != null && instance != this) {
+      Destroy(gameObject);
+      return;
+    }
+
+    instance = this;
+    DontDestroyOnLoad(gameObject);
+
+    Log("MGAPrincipiaBridgeMissionEventDaemon.Awake reset_poll_state realtime=" +
+        Time.realtimeSinceStartup.ToString("R", CultureInfo.InvariantCulture) +
+        " ut=" + Planetarium.GetUniversalTime().ToString("R", CultureInfo.InvariantCulture));
+  }
+
+  public void OnDestroy() {
+    if (instance == this) {
+      instance = null;
+    }
   }
 
   public void Update() {
+    try {
+      UpdateImpl();
+    } catch (Exception e) {
+      Log("UPDATE_EXCEPTION " + e);
+    }
+  }
+
+  private void UpdateImpl() {
     if (!HighLogic.LoadedSceneIsFlight) return;
+
+    double now = Time.realtimeSinceStartup;
+    if (now >= nextHeartbeatRealtime) {
+      nextHeartbeatRealtime = now + HeartbeatPeriodS;
+      string heartbeatPath = Path.Combine(
+          KSPUtil.ApplicationRootPath,
+          "GameData/MGAPlanner/mission_event.json");
+      Log("HEARTBEAT realtime=" + now.ToString("R", CultureInfo.InvariantCulture) +
+          " ut=" + Planetarium.GetUniversalTime().ToString("R", CultureInfo.InvariantCulture) +
+          " active_vessel=" + (FlightGlobals.ActiveVessel == null ? "null" : FlightGlobals.ActiveVessel.vesselName) +
+          " event_exists=" + File.Exists(heartbeatPath));
+    }
+
     if (FlightGlobals.ActiveVessel == null) return;
 
-    double ut = Planetarium.GetUniversalTime();
-    if (ut < nextPollUt) return;
-    nextPollUt = ut + PollPeriodS;
+    if (now < nextPollRealtime) return;
+    nextPollRealtime = now + PollPeriodS;
 
     string jsonPath = Path.Combine(
         KSPUtil.ApplicationRootPath,
@@ -40,15 +88,36 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     }
 
     MissionEvent ev = ParseMissionEvent(json);
+    Log("POLL request_id=" + ev.request_id + " enabled=" + ev.enabled +
+        " mode=" + ev.mode + " nonce=" + ev.force_nonce);
 
-    if (!ev.enabled) return;
+    if (!ev.enabled) {
+      Log("SKIP disabled request_id=" + ev.request_id);
+      return;
+    }
 
     if (String.IsNullOrEmpty(ev.request_id)) {
       Log("EVENT_IGNORED missing request_id");
       return;
     }
 
-    if (ev.request_id == lastRequestId) return;
+    if (ev.mode == "reset_bridge_state") {
+      lastRequestId = "";
+      EventResult reset = new EventResult();
+      reset.request_id = ev.request_id;
+      reset.mode = ev.mode;
+      reset.success = true;
+      reset.status = "bridge_state_reset";
+      reset.message = "Bridge polling state reset";
+      WriteResult(reset);
+      Log("RESET_BRIDGE_STATE done request_id=" + ev.request_id);
+      return;
+    }
+
+    if (ev.request_id == lastRequestId && String.IsNullOrEmpty(ev.force_nonce)) {
+      Log("SKIP already_processed request_id=" + ev.request_id);
+      return;
+    }
 
     lastRequestId = ev.request_id;
 
@@ -68,6 +137,7 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     public string request_id = "";
     public string mode = "insert_navigation";
     public string dedupe_tag = "";
+    public string force_nonce = "";
     public string vessel_guid = "";
     public int insert_index = -1;
     public int clone_from_index = -1;
@@ -77,6 +147,22 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     public double placeholder_dv_m_s = 0.001;
     public double tolerance_time_s = 0.01;
     public double tolerance_dv_m_s = 1e-6;
+
+    // Added fields from patch
+    public bool ensure_flight_plan = true;
+    public double plan_final_time = Double.NaN;
+    public double mass_tonnes = 0.0;
+
+    public string burn_template = "json";
+    public double thrust_kN = 0.0;
+    public double specific_impulse_s_g0 = 0.0;
+    public bool is_inertially_fixed = false;
+
+    public int frame_extension = -1;
+    public int frame_centre_index = -1;
+    public int frame_primary_index = -1;
+    public int frame_secondary_index = -1;
+    public bool frame_centre_from_active_body = false;
   }
 
   private sealed class EventResult {
@@ -162,12 +248,34 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     }
 
     bool exists = Convert.ToBoolean(InvokeExact(iface, "FlightPlanExists", plugin, activeGuid));
-    Log("FlightPlanExists=" + exists);
+    Log("FlightPlanExists.before=" + exists);
+
+    if (!exists && ev.ensure_flight_plan) {
+      double finalTime = Double.IsNaN(ev.plan_final_time)
+          ? ev.initial_time + 3600.0
+          : ev.plan_final_time;
+
+      if (ev.mass_tonnes <= 0.0) {
+        Log("FAIL mass_tonnes required to create FlightPlan");
+        res.success = false;
+        res.status = "missing_mass_tonnes";
+        res.message = "FlightPlanCreate requires mass_tonnes";
+        return res;
+      }
+
+      Log("CREATE_FLIGHT_PLAN final_time=" + Num(finalTime) +
+          " mass_tonnes=" + Num(ev.mass_tonnes));
+
+      InvokeExact(iface, "FlightPlanCreate", plugin, activeGuid, finalTime, ev.mass_tonnes);
+    }
+
+    exists = Convert.ToBoolean(InvokeExact(iface, "FlightPlanExists", plugin, activeGuid));
+    Log("FlightPlanExists.after=" + exists);
+
     if (!exists) {
-      Log("FAIL no existing flight plan; create one manually in Principia first");
       res.success = false;
       res.status = "no_flight_plan";
-      res.message = "No existing Principia flight plan";
+      res.message = "No existing Principia flight plan and creation failed/disabled";
       return res;
     }
 
@@ -177,11 +285,11 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     res.segments_before = segmentsBefore;
     Log("BEFORE manoeuvres=" + before + " segments=" + segmentsBefore);
 
-    if (before < 1) {
-      Log("FAIL expected at least one existing manoeuvre to clone");
+    if (before < 1 && ev.burn_template == "clone") {
+      Log("FAIL clone requested but no existing manoeuvre exists");
       res.success = false;
-      res.status = "no_source_manoeuvre";
-      res.message = "Need at least one existing manoeuvre to clone engine/frame parameters";
+      res.status = "clone_without_source";
+      res.message = "burn_template=clone requires an existing manoeuvre";
       return res;
     }
 
@@ -195,15 +303,6 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
       return res;
     }
 
-    int cloneIndex = ev.clone_from_index >= 0 ? ev.clone_from_index : before - 1;
-    if (cloneIndex < 0 || cloneIndex >= before) {
-      Log("FAIL invalid clone_from_index=" + cloneIndex + " before=" + before);
-      res.success = false;
-      res.status = "invalid_clone_index";
-      res.message = "clone_from_index out of range";
-      return res;
-    }
-
     int insertIndex = ev.insert_index >= 0 ? ev.insert_index : before;
     if (insertIndex < 0 || insertIndex > before) {
       Log("FAIL invalid insert_index=" + insertIndex + " before=" + before);
@@ -214,18 +313,53 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     }
     res.insert_index = insertIndex;
 
-    object sourceManoeuvre = InvokeExact(iface, "FlightPlanGetManoeuvre", plugin, activeGuid, cloneIndex);
-    object burn = GetField(sourceManoeuvre, "burn");
-    if (burn == null) {
-      Log("FAIL could not clone source burn");
+    object burn = null;
+
+    if (ev.burn_template == "clone") {
+      int cloneIndex = ev.clone_from_index >= 0 ? ev.clone_from_index : before - 1;
+      if (cloneIndex < 0 || cloneIndex >= before) {
+        res.success = false;
+        res.status = "invalid_clone_index";
+        res.message = "clone_from_index out of range";
+        return res;
+      }
+
+      object sourceManoeuvre =
+          InvokeExact(iface, "FlightPlanGetManoeuvre", plugin, activeGuid, cloneIndex);
+      burn = GetField(sourceManoeuvre, "burn");
+    } else if (ev.burn_template == "json") {
+      burn = CreateBurnFromJson(adapter, ev);
+    } else if (ev.burn_template == "json_frame_from_clone") {
+      if (before < 1) {
+        Log("WARN json_frame_from_clone requested but no manoeuvre exists; falling back to json frame");
+        burn = CreateBurnFromJson(adapter, ev);
+      } else {
+        int cloneIndex = ev.clone_from_index >= 0 ? ev.clone_from_index : before - 1;
+        object sourceManoeuvre =
+            InvokeExact(iface, "FlightPlanGetManoeuvre", plugin, activeGuid, cloneIndex);
+        object sourceBurn = GetField(sourceManoeuvre, "burn");
+        object sourceFrame = GetField(sourceBurn, "frame");
+
+        burn = CreateBurnFromJson(adapter, ev);
+        SetField(burn, "frame", sourceFrame);
+      }
+    } else {
       res.success = false;
-      res.status = "clone_failed";
-      res.message = "Could not clone source burn";
+      res.status = "unsupported_burn_template";
+      res.message = "Unsupported burn_template: " + ev.burn_template;
+      return res;
+    }
+
+    if (burn == null) {
+      Log("FAIL could not create or clone burn");
+      res.success = false;
+      res.status = "burn_creation_failed";
+      res.message = "Could not create or clone burn";
       return res;
     }
 
     SetField(burn, "initial_time", ev.initial_time);
-    SetField(burn, "is_inertially_fixed", false);
+    SetField(burn, "is_inertially_fixed", ev.is_inertially_fixed);
 
     double[] navToInsert = null;
 
@@ -261,7 +395,6 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
 
     Log("INSERT mode=" + ev.mode);
     Log("INSERT index=" + insertIndex);
-    Log("INSERT clone_from_index=" + cloneIndex);
     Log("INSERT initial_time=" + ev.initial_time.ToString("R", CultureInfo.InvariantCulture));
 
     if (navToInsert != null) LogVec("INSERT delta_v_navigation_m_s", navToInsert);
@@ -297,7 +430,7 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
       object insertedBurn = GetField(inserted, "burn");
       SetField(insertedBurn, "delta_v", MakeXYZ(adapter, navDesired));
       SetField(insertedBurn, "initial_time", ev.initial_time);
-      SetField(insertedBurn, "is_inertially_fixed", false);
+      SetField(insertedBurn, "is_inertially_fixed", ev.is_inertially_fixed);
 
       object replaceStatus = InvokeExact(iface, "FlightPlanReplace", plugin, activeGuid, insertedBurn, insertIndex);
       DumpObjectFields("REPLACE_STATUS", replaceStatus);
@@ -393,6 +526,7 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     ev.request_id = GetString(json, "request_id", "");
     ev.mode = GetString(json, "mode", ev.mode);
     ev.dedupe_tag = GetString(json, "dedupe_tag", "");
+    ev.force_nonce = GetString(json, "force_nonce", "");
     ev.vessel_guid = GetString(json, "vessel_guid", "");
     ev.insert_index = GetInt(json, "insert_index", -1);
     ev.clone_from_index = GetInt(json, "clone_from_index", -1);
@@ -402,6 +536,23 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     ev.tolerance_dv_m_s = GetDouble(json, "tolerance_dv_m_s", 1e-6);
     ev.delta_v_navigation_m_s = GetArray3(json, "delta_v_navigation_m_s");
     ev.delta_v_levela_m_s = GetArray3(json, "delta_v_levela_m_s");
+
+    // Parsed new fields
+    ev.ensure_flight_plan = GetBool(json, "ensure_flight_plan", true);
+    ev.plan_final_time = GetDouble(json, "plan_final_time", Double.NaN);
+    ev.mass_tonnes = GetDouble(json, "mass_tonnes", 0.0);
+
+    ev.burn_template = GetString(json, "burn_template", "json");
+    ev.thrust_kN = GetDouble(json, "thrust_kN", 0.0);
+    ev.specific_impulse_s_g0 = GetDouble(json, "specific_impulse_s_g0", 0.0);
+    ev.is_inertially_fixed = GetBool(json, "is_inertially_fixed", false);
+
+    ev.frame_extension = GetInt(json, "frame_extension", -1);
+    ev.frame_centre_index = GetInt(json, "frame_centre_index", -1);
+    ev.frame_primary_index = GetInt(json, "frame_primary_index", -1);
+    ev.frame_secondary_index = GetInt(json, "frame_secondary_index", -1);
+    ev.frame_centre_from_active_body = GetBool(json, "frame_centre_from_active_body", false);
+
     return ev;
   }
 
@@ -439,6 +590,75 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
       Double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture),
       Double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture)
     };
+  }
+
+  private static object CreateBurnFromJson(Assembly adapter, MissionEvent ev) {
+    Type burnType = adapter.GetType("principia.ksp_plugin_adapter.Burn");
+    Type frameType = adapter.GetType("principia.ksp_plugin_adapter.NavigationFrameParameters");
+
+    if (burnType == null || frameType == null) {
+      throw new InvalidOperationException("Could not locate Principia Burn or NavigationFrameParameters type");
+    }
+
+    object burn = Activator.CreateInstance(burnType);
+    object frame = Activator.CreateInstance(frameType);
+
+    if (ev.frame_centre_from_active_body) {
+      int activeIndex = ActiveBodyIndex();
+      Log("FRAME_AUTO_CENTRE active_body=" + ActiveBodyName() + " ksp_body_index=" + activeIndex);
+      if (activeIndex >= 0) ev.frame_centre_index = activeIndex;
+    }
+
+    if (ev.frame_extension <= 0) {
+      throw new InvalidOperationException(
+          "Invalid frame_extension=" + ev.frame_extension +
+          ". Principia requires protobuf extension field number 6000..6003 for navigation frames.");
+    }
+
+    Log("FRAME_JSON extension=" + ev.frame_extension +
+        " centre_index=" + ev.frame_centre_index +
+        " primary_index=" + ev.frame_primary_index +
+        " secondary_index=" + ev.frame_secondary_index);
+
+    SetField(frame, "extension", ev.frame_extension);
+    SetField(frame, "centre_index", ev.frame_centre_index);
+    SetField(frame, "primary_index", ev.frame_primary_index);
+    SetField(frame, "secondary_index", ev.frame_secondary_index);
+
+    SetField(burn, "thrust_in_kilonewtons", ev.thrust_kN);
+    SetField(burn, "specific_impulse_in_seconds_g0", ev.specific_impulse_s_g0);
+    SetField(burn, "frame", frame);
+    SetField(burn, "initial_time", ev.initial_time);
+    SetField(burn, "delta_v", MakeXYZ(adapter, new double[] { ev.placeholder_dv_m_s, 0.0, 0.0 }));
+    SetField(burn, "is_inertially_fixed", ev.is_inertially_fixed);
+
+    return burn;
+  }
+
+  private static string ActiveBodyName() {
+    try {
+      if (FlightGlobals.ActiveVessel == null) return "null";
+      CelestialBody b = FlightGlobals.ActiveVessel.mainBody;
+      if (b == null && FlightGlobals.ActiveVessel.orbit != null) b = FlightGlobals.ActiveVessel.orbit.referenceBody;
+      return b == null ? "null" : b.bodyName;
+    } catch { return "exception"; }
+  }
+
+  private static int ActiveBodyIndex() {
+    try {
+      if (FlightGlobals.ActiveVessel == null) return -1;
+      CelestialBody body = FlightGlobals.ActiveVessel.mainBody;
+      if (body == null && FlightGlobals.ActiveVessel.orbit != null) body = FlightGlobals.ActiveVessel.orbit.referenceBody;
+      if (body == null || FlightGlobals.Bodies == null) return -1;
+      for (int i = 0; i < FlightGlobals.Bodies.Count; ++i) {
+        if (System.Object.ReferenceEquals(FlightGlobals.Bodies[i], body)) return i;
+        if (FlightGlobals.Bodies[i] != null && FlightGlobals.Bodies[i].bodyName == body.bodyName) return i;
+      }
+      return -1;
+    } catch (Exception e) {
+      Log("ACTIVE_BODY_INDEX_EXCEPTION " + e.GetType().Name + ": " + e.Message);
+      return -1;
+    }
   }
 
   private static Assembly FindAdapterAssembly() {
