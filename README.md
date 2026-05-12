@@ -6,8 +6,8 @@
 
 This repository is an attempt to bridge three worlds that usually do not talk to each other cleanly:
 
-1. **Global trajectory search** using patched-conic/Lambert-style methods.
-2. **Offline N-body validation/refinement** using Principia-derived ephemerides and native propagation tools.
+1. **Global trajectory search** using patched-conic/Lambert-style methods.  
+2. **Offline N-body validation/refinement** using Principia-derived ephemerides and native propagation tools.  
 3. **In-game execution** using kRPC and a small KSP/Principia bridge DLL that can create Principia FlightPlan manoeuvres directly in-game.
 
 The project is currently focused on proving a full workflow:
@@ -29,28 +29,27 @@ Kerbin → Eve → Kerbin → Jool
 
 The route search and N-body refinement pieces are working well enough to identify candidate trajectories. The active development area is the **field-engineering layer**: turning offline vectors into robust, game-executable Principia manoeuvres.
 
----
-
 ## Important repository note: large binaries and SPICE assets are not included
 
 Some generated/native files are intentionally **not committed** because they are too large for normal GitHub hosting or are machine/build specific.
 
 Examples of files you may need to build or generate locally:
 
-```text
+```bash
 bin/x64/principia_impulsive_particle_server
 bin/x64/principia_particle_validator
 bin/x64/principia_impulsive_particle_validator
 bin/x64/principia_flightplan_probe
 bin/x64/principia_flightplan_copywrite_smoke
+bin/x64/principia_sample_binary_chunks
 ```
 
 Similarly, SPICE/CSPICE toolkits and generated kernels may not be committed:
 
 ```text
-data/kernels/**/*.bsp
-data/kernels/**/*.tpc
-data/kernels/**/*.tls
+data/kernels/**/**/*.bsp
+data/kernels/**/**/*.tpc
+data/kernels/**/**/*.tls
 third_party/cspice/ or deps/cspice/
 ```
 
@@ -64,30 +63,30 @@ For collaboration, Git LFS may be useful, but at the moment the repo is designed
 
 ### Working / mostly working
 
-- Read/export Principia serialized plugin data from KSP save files.
-- Probe Principia FlightPlans and manoeuvres from native tools.
-- Convert between the project’s `raw` Principia frame and the LevelA/SPICE-like frame used by the Python pipeline.
-- Start a Principia-backed native impulse propagation server.
-- Propagate particles with one or multiple impulsive burns using native Principia code.
-- Run offline N-body validation/refinement of candidate legs.
-- Build a KSP C# addon/DLL that watches `GameData/MGAPlanner/mission_event.json` and inserts burns into the active vessel’s Principia FlightPlan.
-- Insert live Principia FlightPlan manoeuvres from JSON events.
-- Create FlightPlans from scratch when none exist.
+- Read/export Principia serialized plugin data from KSP save files.  
+- Probe Principia FlightPlans and manoeuvres from native tools.  
+- Convert between the project’s raw Principia frame and the LevelA/SPICE-like frame used by the Python pipeline.  
+- Start a Principia-backed native impulse propagation server.  
+- Propagate particles with one or multiple impulsive burns using native Principia code.  
+- Run offline N-body validation/refinement of candidate legs.  
+- Build a KSP C\# addon/DLL that watches GameData/MGAPlanner/mission_event.json and inserts burns into the active vessel’s Principia FlightPlan.  
+- Insert live Principia FlightPlan manoeuvres from JSON events.  
+- Create FlightPlans from scratch when none exist.  
 - Read back inserted manoeuvres and verify vector roundtrips.
 
 ### In progress / fragile
 
-- Robust departure targeting from an actual parking orbit.
-- Multi-impulse optimisation from a live in-game vessel state to an Eve/Jool encounter.
-- Safe long-preview FlightPlan handling in Principia without hitting max-step or memory limits.
-- Automatic cleanup/removal/reset of existing FlightPlan manoeuvres.
+- Robust departure targeting from an actual parking orbit.  
+- Multi-impulse optimisation from a live in-game vessel state to an Eve/Jool encounter.  
+- Safe long-preview FlightPlan handling in Principia without hitting max-step or memory limits.  
+- Automatic cleanup/removal/reset of existing FlightPlan manoeuvres.  
 - Polished command-line UX.
 
 ### Known hard problems
 
-- Principia is N-body. A patched-conic solution can miss by millions of km if injected directly without N-body refinement.
-- A visually plausible prograde departure burn is not enough; the burn must target the correct outgoing `v∞` vector and downstream encounter.
-- Long FlightPlan previews from low orbit can be expensive or crash-prone. Insert burns in staged windows and extend previews gradually.
+- Principia is N-body. A patched-conic solution can miss by millions of km if injected directly without N-body refinement.  
+- A visually plausible prograde departure burn is not enough; the burn must target the correct outgoing v∞ vector and downstream encounter.  
+- Long FlightPlan previews from low orbit can be expensive or crash-prone. Insert burns in staged windows and extend previews gradually.  
 - KSP/Unity/Principia can accumulate memory pressure after many reloads; restarting the game between major tests is sometimes necessary.
 
 ---
@@ -110,7 +109,7 @@ Native Principia tools
   └─ FlightPlan probe/copywrite experiments
 
 KSP live bridge
-  ├─ C# KSPAddon
+  ├─ C\# KSPAddon
   ├─ watches GameData/MGAPlanner/mission_event.json
   ├─ creates/extends Principia FlightPlans
   ├─ inserts/replaces manoeuvres
@@ -125,8 +124,8 @@ One of the most important lessons from this project is that frame mistakes look 
 
 The project commonly uses:
 
-- **Principia raw frame**: native Principia/KSP plugin coordinates.
-- **LevelA/SPICE-like frame**: frame used by generated kernels and many Python-side tools.
+- **Principia raw frame**: native Principia/KSP plugin coordinates.  
+- **LevelA/SPICE-like frame**: frame used by generated kernels and many Python-side tools.  
 - **Navigation frame**: Principia FlightPlan manoeuvre frame, usually tangent/normal/binormal-like.
 
 The currently validated mapping is:
@@ -169,6 +168,172 @@ python -m pip install matplotlib tqdm
 
 ---
 
+## Installing / compiling CSPICE
+
+The Python package spiceypy uses CSPICE internally, but for this project you may also want a local NAIF CSPICE Toolkit for generating/inspecting kernels and linking native utilities.
+
+Official NAIF pages:
+
+- https://naif.jpl.nasa.gov/naif/toolkit.html  
+- https://naif.jpl.nasa.gov/naif/toolkit_C.html  
+- https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/index.html
+
+### Linux x86_64 quick install
+
+Create a local dependency directory:
+
+```bash
+mkdir -p deps
+cd deps
+```
+
+Download CSPICE for your platform from NAIF. For Linux GCC 64-bit, the package is typically named cspice.tar.Z.
+
+```text
+# Example only. Prefer checking the current NAIF page manually.
+# Download cspice.tar.Z from the official NAIF Toolkit page.
+```
+
+Extract:
+
+```bash
+uncompress cspice.tar.Z
+# or, if your system supports it:
+# gzip -d cspice.tar.Z
+
+tar xf cspice.tar
+```
+
+Build the toolkit:
+
+```bash
+cd cspice
+chmod +x makeall.csh makeall.csh 2>/dev/null || true
+
+# Many NAIF distributions use csh scripts.
+# Install tcsh/csh if needed:
+#   sudo dnf install tcsh
+#   sudo apt install tcsh
+
+csh makeall.csh
+```
+
+Expected useful outputs:
+
+```text
+cspice/lib/cspice.a
+cspice/lib/csupport.a
+cspice/include/SpiceUsr.h
+cspice/exe/brief
+cspice/exe/spkdiff
+cspice/exe/spacit
+```
+
+You can then point this project to CSPICE with environment variables, for example:
+
+```bash
+export CSPICE_HOME="$PWD"
+export CSPICE_INCLUDE="$CSPICE_HOME/include"
+export CSPICE_LIB="$CSPICE_HOME/lib"
+export PATH="$CSPICE_HOME/exe:$PATH"
+```
+
+A minimal C compile/link test:
+
+```bash
+cat > /tmp/cspice_smoke.c <<'C'
+#include <stdio.h>
+#include "SpiceUsr.h"
+
+int main(void) {
+  printf("CSPICE smoke test compiled.\n");
+  return 0;
+}
+C
+
+gcc /tmp/cspice_smoke.c \
+  -I"$CSPICE_INCLUDE" \
+  "$CSPICE_LIB/cspice.a" "$CSPICE_LIB/csupport.a" \
+  -lm -o /tmp/cspice_smoke
+
+/tmp/cspice_smoke
+```
+
+If you only use Python/SPICE through spiceypy, this native CSPICE build may not be required.
+
+---
+
+## Generating Custom SPICE Kernels from Principia (Any Solar System)
+
+You might wonder why we don't just use standard NASA SPICE kernels for the Real Solar System (RSS) or external integrators like REBOUND. While NASA SPICE and REBOUND are incredibly precise and prioritize consistency, Principia's N-body engine is optimized to be lightweight and fast for live, in-game calculations.
+
+In our testing, mixing external ephemerides (REBOUND or NASA SPICE) with Principia resulted in small discrepancies (a few kilometers of error), particularly for moons with eccentric or precessing orbits. To achieve perfect in-game precision, **we use Principia's own engine to generate the SPICE kernels**. This ensures the offline trajectory planner perfectly matches what happens natively inside the KSP engine.
+
+Here is how you can generate SPICE kernels for *any* solar system (RSS, JNSQ, etc.) using Principia:
+
+### 1. Building the custom sampler binary
+
+To extract the ephemeris data, we use a custom binary called principia_sample_binary_chunks. Because it depends directly on the Principia repository and exceeds GitHub's 100MB file limit, it is not included in this repo and must be compiled locally.
+
+Creating it required adding a principia_sample_binary_chunks.cpp script (located in native_cpp/ksp_plugin_test) and making minor modifications to Principia's plugin.cpp and plugin.hpp.
+
+The Makefile requires specific targets to build these tools. Here are examples of the Makefile additions needed:
+
+```makefile
+bin/x64/principia_sample_binary_chunks: obj/x64/ksp_plugin_test/principia_sample_binary_chunks.o \
+                                        obj/x64/ksp_plugin_test/plugin_io.o \
+                                        $(filter-out %sample_principia_ephemeris.o %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+
+bin/x64/principia_flightplan_copywrite_smoke: obj/x64/ksp_plugin_test/principia_flightplan_copywrite_smoke.o \
+                                             obj/x64/ksp_plugin_test/plugin_io.o \
+                                             $(filter-out %principia_flightplan_copywrite_smoke.o %principia_flightplan_probe.o %principia_impulsive_particle_server.o %principia_impulsive_particle_validator.o %principia_particle_validator.o %principia_sample_binary_chunks.o %sample_principia_ephemeris.o %dump_current_snapshot.o %dump_plugin_message.o %read_plugin_roundtrip.o %_test.o %benchmark.o %main.o, $(shell find obj/x64 -name "*.o"))
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) $^ $(LIBS) deps/benchmark/src/libbenchmark.a -o $@
+```
+
+You can then compile the tools (e.g., using 12 threads):
+
+```bash
+make bin/x64/principia_sample_binary_chunks -j12
+make bin/x64/principia_impulsive_particle_server -j12
+```
+
+*(Note: We cannot guarantee seamless compilation of these binaries as they are highly dependent on the current state of your local Principia repository).*
+
+### 2. Extracting chunks from the save file
+
+Once compiled, use the binary to sample the serialized plugin from your save file into binary chunks (adjusting parameters like time and step size as needed):
+
+```bash
+principia_sample_binary_chunks \
+  data/jnsq_gate0/principia_serialized_plugin.b64 \
+  data/jnsq_gate0/ephem_chunks_1000y_1h \
+  Sun \
+  0.2 \
+  31557600000 \
+  3600 \
+  31557600
+```
+
+### 3. Converting chunks to SPICE kernels
+
+Finally, use the legacy Python script (located in the legacy directory) to convert those chunks into standard .bsp and .tpc SPICE files.
+
+```bash
+python legacy/principia_chunks_to_spk_type13_v0_3.py \
+  --chunks-dir data/jnsq_gate0/ephem_chunks_1000y_1h \
+  --output-bsp data/spice_jnsq_v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.bsp \
+  --output-tpc data/spice_jnsq_v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.ids.tpc \
+  --output-metadata data/spice_jnsq_v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.metadata.json \
+  --central-body Sun \
+  --degree 9 \
+  --overwrite
+```
+
+---
+
 ## Building native Principia tools
 
 The native tools are built against a local checkout/build environment that can compile Principia-derived C++ code. The exact build can vary depending on your local Principia tree and dependencies.
@@ -185,7 +350,7 @@ make bin/x64/principia_flightplan_copywrite_smoke -j$(nproc)
 
 The most important one for trajectory refinement is:
 
-```text
+```bash
 bin/x64/principia_impulsive_particle_server
 ```
 
@@ -217,13 +382,13 @@ PONG
 BYE
 ```
 
-The older server may not support `PING` and may only accept `PROP` commands.
+The older server may not support PING and may only accept PROP commands.
 
 ---
 
 ## Extracting Principia serialized plugin data from a save
 
-Principia stores a serialized plugin payload inside the `.sfs` save.
+Principia stores a serialized plugin payload inside the .sfs save.
 
 Example:
 
@@ -234,7 +399,7 @@ OUT="data/principia/live_probe/principia_rocket_lines.b64"
 mkdir -p data/principia/live_probe
 
 grep "serialized_plugin =" "$SAVE" \
-  | sed 's/^[[:space:]]*serialized_plugin = //' \
+  | sed 's/^\[\[:space:\]\]\*serialized_plugin = //' \
   > "$OUT"
 ```
 
@@ -252,7 +417,7 @@ bin/x64/principia_flightplan_probe \
 
 ## KSP live bridge: creating Principia manoeuvres from JSON
 
-The in-game bridge is a C# KSP addon that reads:
+The in-game bridge is a C\# KSP addon that reads:
 
 ```text
 <KSP>/GameData/MGAPlanner/mission_event.json
@@ -305,8 +470,8 @@ A typical event:
 
 ### Important safety rules
 
-- Do not generate a new random `request_id` every second. Use stable request IDs like `rank12_departure_attempt0`, then increment to `attempt1` only when intentionally retrying.
-- Disarm `mission_event.json` after success:
+- Do not generate a new random request_id every second. Use stable request IDs like rank12_departure_attempt0, then increment to attempt1 only when intentionally retrying.  
+- Disarm mission_event.json after success:
 
 ```json
 {
@@ -316,8 +481,8 @@ A typical event:
 }
 ```
 
-- For low orbit, do not create a FlightPlan that runs for many hours before the first burn. Warp close to the first burn first.
-- If `INSERT_STATUS.error != 0`, treat the result as failed even if the manoeuvre count changed. Some failure modes can leave partial state.
+- For low orbit, do not create a FlightPlan that runs for many hours before the first burn. Warp close to the first burn first.  
+- If INSERT_STATUS.error != 0, treat the result as failed even if the manoeuvre count changed. Some failure modes can leave partial state.
 
 ---
 
@@ -325,13 +490,11 @@ A typical event:
 
 A robust in-game test should be staged:
 
-```text
-1. Rewind/load a save before the first burn.
-2. Warp to about 5 minutes before burn 0.
-3. Insert burn 0 with a short FlightPlan preview, e.g. burn0 + 10 minutes.
-4. Extend/insert burn 1 only after burn 0 exists.
+1. Rewind/load a save before the first burn.  
+2. Warp to about 5 minutes before burn 0.  
+3. Insert burn 0 with a short FlightPlan preview, e.g. burn0 + 10 minutes.  
+4. Extend/insert burn 1 only after burn 0 exists.  
 5. Preview gradually: +3 days, +15 days, +60 days, then encounter epoch.
-```
 
 Do **not** start by asking Principia to preview from low Kerbin orbit all the way to Eve. That can hit max step count or memory limits.
 
@@ -357,16 +520,16 @@ as a single N-body multiple-shooting problem.
 
 If an optimiser is allowed to choose arbitrary raw Δv vectors, it may find mathematically good but physically bad solutions, such as:
 
-- a first burn dominated by inclination/normal component;
-- a huge “correction” still inside Kerbin SOI;
+- a first burn dominated by inclination/normal component;  
+- a huge “correction” still inside Kerbin SOI;  
 - a non-escape first burn followed by an enormous second burn.
 
 A useful departure optimiser should constrain or penalise:
 
-- non-escape after burn 0;
-- excessive normal/radial burn fraction;
-- second burn too close to Kerbin;
-- second burn magnitude that is too large for a correction;
+- non-escape after burn 0;  
+- excessive normal/radial burn fraction;  
+- second burn too close to Kerbin;  
+- second burn magnitude that is too large for a correction;  
 - long low-orbit propagation before departure.
 
 ---
@@ -422,17 +585,17 @@ python scripts/push_event_sequence.py \
 
 This project would benefit from feedback from:
 
-- KSP Principia users who understand FlightPlans and reference frames.
-- Astrodynamics people familiar with multiple shooting and DSM targeting.
-- C++ developers comfortable with Principia internals.
-- KSP modders comfortable with C# addon lifecycle and Unity/Mono quirks.
+- KSP Principia users who understand FlightPlans and reference frames.  
+- Astrodynamics people familiar with multiple shooting and DSM targeting.  
+- C++ developers comfortable with Principia internals.  
+- KSP modders comfortable with C\# addon lifecycle and Unity/Mono quirks.
 
 Especially useful contributions:
 
-- safer FlightPlan reset/remove modes in the bridge DLL;
-- better departure targeting constraints;
-- robust multi-impulse optimisation examples;
-- documentation for frame transforms;
+- safer FlightPlan reset/remove modes in the bridge DLL;  
+- better departure targeting constraints;  
+- robust multi-impulse optimisation examples;  
+- documentation for frame transforms;  
 - memory/step-count mitigation strategies for long Principia previews.
 
 ---
