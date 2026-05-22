@@ -112,6 +112,15 @@ def main() -> int:
     current_ut = sc.ut
     print(f"current_ut   : {current_ut:.6f}")
 
+    # --- INÍCIO DA INJEÇÃO DE MASSA ---
+    try:
+        live_mass_tonnes = sc.active_vessel.mass / 1000.0
+        event["mass_tonnes"] = live_mass_tonnes
+        print(f"live_mass    : {live_mass_tonnes:.3f} t")
+    except Exception as e:
+        print(f"[WARN] could not fetch live mass from kRPC: {e}")
+    # --- FIM DA INJEÇÃO DE MASSA ---
+
     if current_ut >= stop_ut:
         print("[OK] already at/after stop_ut; no warp needed")
     elif args.dry_run:

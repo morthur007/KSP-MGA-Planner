@@ -172,6 +172,11 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     public bool rollback_on_status_error = true;
     public bool auto_sort_insert_index = true;
     public bool delete_existing_flight_plan = false;
+
+    // Live navigation snapshot v0.1.
+    public string snapshot_output_path = "";
+    public bool snapshot_include_ksp_bodies = true;
+    public bool snapshot_include_debug = true;
   }
 
   private sealed class EventResult {
@@ -187,6 +192,8 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     public int segments_after = -1;
     public double navigation_error_m_s = Double.NaN;
     public double levela_error_m_s = Double.NaN;
+    // Optional preformatted JSON fields appended to mission_event_result.json.
+    public string extra_json = "";
 
     public static EventResult Fail(MissionEvent ev, string status, string message) {
       return new EventResult {
@@ -274,6 +281,10 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
       return res;
     }
 
+    if (ev.mode == "export_active_vessel_state") {
+      return ExportActiveVesselState(ev, vessel);
+    }
+
     Assembly adapter = FindAdapterAssembly();
     if (adapter == null) {
       Log("FAIL no principia.ksp_plugin_adapter assembly");
@@ -292,6 +303,10 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
       return res;
     }
 
+    if (ev.mode == "dump_adapter_methods") {
+      return DumpAdapterMethods(ev, iface);
+    }
+
     IntPtr plugin = FindPluginPtr();
     Log("plugin_ptr=" + Ptr(plugin));
     if (plugin == IntPtr.Zero) {
@@ -300,6 +315,15 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
       res.status = "no_plugin_ptr";
       res.message = "plugin_ IntPtr not found";
       return res;
+    }
+
+    if (ev.mode == "export_principia_vessel_state") {
+      return ExportPrincipiaVesselState(ev, adapter, iface, plugin, vessel);
+    }
+
+    if (ev.mode == "principia_live_navigation_snapshot_v0_1" ||
+        ev.mode == "export_live_navigation_snapshot") {
+      return ExportLiveNavigationSnapshot(ev, adapter, iface, plugin, vessel);
     }
 
     bool exists = FlightPlanExists(iface, plugin, activeGuid);
@@ -695,6 +719,673 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     }
   }
 
+
+  private static EventResult ExportPrincipiaVesselState(MissionEvent ev, Assembly adapter, Type iface, IntPtr plugin, Vessel vessel) {
+    EventResult res = new EventResult();
+    res.request_id = ev.request_id;
+    res.mode = ev.mode;
+    res.success = true;
+    res.status = "ok";
+    res.message = "Active vessel state exported from Principia adapter";
+    res.extra_json = "  \"active_vessel_state\": " + PrincipiaVesselStateJson(adapter, iface, plugin, vessel);
+    Log("EXPORT_PRINCIPIA_VESSEL_STATE ok vessel=" + (vessel == null ? "null" : vessel.vesselName));
+    return res;
+  }
+
+  private static EventResult ExportLiveNavigationSnapshot(
+      MissionEvent ev,
+      Assembly adapter,
+      Type iface,
+      IntPtr plugin,
+      Vessel vessel) {
+    EventResult res = new EventResult();
+    res.request_id = ev.request_id;
+    res.mode = ev.mode;
+    res.success = true;
+    res.status = "ok";
+
+    string snapshot = LiveNavigationSnapshotJson(ev, adapter, iface, plugin, vessel);
+    string snapshotPath = SnapshotOutputPath(ev);
+
+    try {
+      string dir = Path.GetDirectoryName(snapshotPath);
+      if (!String.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+      File.WriteAllText(snapshotPath, snapshot);
+    } catch (Exception e) {
+      res.success = false;
+      res.status = "snapshot_write_failed";
+      res.message = e.GetType().Name + ": " + e.Message;
+      res.extra_json =
+          "  \"live_navigation_snapshot_path\": \"" + JsonEscape(snapshotPath) + "\"";
+      Log("EXPORT_LIVE_NAVIGATION_SNAPSHOT_WRITE_FAILED " + e);
+      return res;
+    }
+
+    res.message = "Live navigation snapshot v0.1 exported";
+    res.extra_json =
+        "  \"live_navigation_snapshot_path\": \"" + JsonEscape(snapshotPath) + "\",\n" +
+        "  \"live_navigation_snapshot\": " + snapshot;
+    Log("EXPORT_LIVE_NAVIGATION_SNAPSHOT ok path=" + snapshotPath);
+    return res;
+  }
+
+  private static string SnapshotOutputPath(MissionEvent ev) {
+    if (!String.IsNullOrEmpty(ev.snapshot_output_path)) {
+      if (Path.IsPathRooted(ev.snapshot_output_path)) {
+        return ev.snapshot_output_path;
+      }
+      return Path.Combine(KSPUtil.ApplicationRootPath, ev.snapshot_output_path);
+    }
+
+    return Path.Combine(
+        KSPUtil.ApplicationRootPath,
+        "GameData/MGAPlanner/principia_live_navigation_snapshot_v0_1.json");
+  }
+
+  private static string LiveNavigationSnapshotJson(
+      MissionEvent ev,
+      Assembly adapter,
+      Type iface,
+      IntPtr plugin,
+      Vessel vessel) {
+    double ut = Planetarium.GetUniversalTime();
+    string vesselJson = PrincipiaVesselStateJson(adapter, iface, plugin, vessel);
+
+    string bodiesJson = ev.snapshot_include_ksp_bodies
+        ? KspBodiesSnapshotJson(ut)
+        : "[]";
+
+    string activeBody = ActiveBodyName();
+    int activeBodyIndex = ActiveBodyIndex();
+
+    string text =
+      "{\n" +
+      "  \"schema\": \"principia_live_navigation_snapshot_v0_1\",\n" +
+      "  \"source\": \"MGAPrincipiaBridgeMissionEventDaemon\",\n" +
+      "  \"created_unix_utc_s\": " + JsonNum((DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds) + ",\n" +
+      "  \"t_game_s\": " + JsonNum(ut) + ",\n" +
+      "  \"t_spice_s\": " + JsonNum(ut) + ",\n" +
+      "  \"time_note\": \"t_spice_s equals game UT in this bridge snapshot; Python may add a TDB/J2000 anchor offset.\",\n" +
+      "  \"frame_contract\": {\n" +
+      "    \"principia_raw_to_levela\": \"(X,Y,Z)->(-Y,+Z,+X)\",\n" +
+      "    \"levela_to_principia_raw\": \"(X,Y,Z)->(+Z,-X,+Y)\",\n" +
+      "    \"vessel_state_frame\": \"Principia adapter VesselFromParent, corrected by qp_to_pipeline_permutation; see vessel.frame_fix\",\n" +
+      "    \"body_state_frame\": \"KSP/Unity observable body state, diagnostic only in v0_1\"\n" +
+      "  },\n" +
+      "  \"capabilities\": {\n" +
+      "    \"principia_vessel_relative_state\": true,\n" +
+      "    \"principia_tnb_basis\": true,\n" +
+      "    \"principia_body_proto_base64\": false,\n" +
+      "    \"principia_body_raw_states\": false,\n" +
+      "    \"ksp_body_observation\": " + (ev.snapshot_include_ksp_bodies ? "true" : "false") + "\n" +
+      "  },\n" +
+      "  \"active_body\": {\n" +
+      "    \"name\": \"" + JsonEscape(activeBody) + "\",\n" +
+      "    \"index\": " + activeBodyIndex + "\n" +
+      "  },\n" +
+      "  \"vessel\": " + vesselJson + ",\n" +
+      "  \"bodies\": " + bodiesJson + ",\n" +
+      "  \"limitations\": [\n" +
+      "    \"v0_1 is a live navigation snapshot for vessel targeting and diagnostics.\",\n" +
+      "    \"It does not contain serialized Principia MassiveBody protos; a native C++ exporter is still needed for a standalone snapshot targeter.\",\n" +
+      "    \"KSP body positions/velocities in bodies[] are not advertised as Principia raw Barycentric truth. Use them only for diagnostics unless separately validated.\"\n" +
+      "  ]\n" +
+      "}";
+
+    return text;
+  }
+
+  private static string KspBodiesSnapshotJson(double ut) {
+    try {
+      if (FlightGlobals.Bodies == null) return "[]";
+
+      string json = "[\n";
+      for (int i = 0; i < FlightGlobals.Bodies.Count; ++i) {
+        CelestialBody body = FlightGlobals.Bodies[i];
+        if (body == null) continue;
+
+        object orbit = null;
+        try { orbit = body.orbit; } catch {}
+
+        double[] position = VectorLikeToArray(GetMemberValue(body, "position"));
+        double[] relPosAtUt = VectorLikeToArray(InvokeInstance(orbit, "getRelativePositionAtUT", ut));
+        double[] relVelAtUt = VectorLikeToArray(InvokeInstance(orbit, "getOrbitalVelocityAtUT", ut));
+
+        double radius = ToDoubleOrNaN(GetMemberValue(body, "Radius"));
+        double gravParameter = ToDoubleOrNaN(GetMemberValue(body, "gravParameter"));
+        double mass = ToDoubleOrNaN(GetMemberValue(body, "Mass"));
+        double soi = ToDoubleOrNaN(GetMemberValue(body, "sphereOfInfluence"));
+        double atmosphereDepth = ToDoubleOrNaN(GetMemberValue(body, "atmosphereDepth"));
+        double rotationPeriod = ToDoubleOrNaN(GetMemberValue(body, "rotationPeriod"));
+
+        json +=
+          "    {\n" +
+          "      \"index\": " + i + ",\n" +
+          "      \"name\": \"" + JsonEscape(body.bodyName) + "\",\n" +
+          "      \"body_proto_base64\": null,\n" +
+          "      \"state_source\": \"ksp_celestialbody_observation_diagnostic\",\n" +
+          "      \"radius_m\": " + JsonNum(radius) + ",\n" +
+          "      \"grav_parameter_m3_s2\": " + JsonNum(gravParameter) + ",\n" +
+          "      \"mass_kg\": " + JsonNum(mass) + ",\n" +
+          "      \"sphere_of_influence_m\": " + JsonNum(soi) + ",\n" +
+          "      \"atmosphere_depth_m\": " + JsonNum(atmosphereDepth) + ",\n" +
+          "      \"rotation_period_s\": " + JsonNum(rotationPeriod) + ",\n" +
+          "      \"position_world_m\": " + JsonArray3(position) + ",\n" +
+          "      \"orbit_rel_r_m\": " + JsonArray3(relPosAtUt) + ",\n" +
+          "      \"orbit_rel_v_m_s\": " + JsonArray3(relVelAtUt) + "\n" +
+          "    }" + (i + 1 < FlightGlobals.Bodies.Count ? "," : "") + "\n";
+      }
+      json += "  ]";
+      return json;
+    } catch (Exception e) {
+      Log("KSP_BODIES_SNAPSHOT_EXCEPTION " + e);
+      return "[]";
+    }
+  }
+
+  private static string PrincipiaVesselStateJson(Assembly adapter, Type iface, IntPtr plugin, Vessel vessel) {
+    if (vessel == null) return "null";
+
+    double ut = Planetarium.GetUniversalTime();
+    string guid = vessel.id.ToString();
+    CelestialBody body = vessel.mainBody;
+    if (body == null && vessel.orbit != null) body = vessel.orbit.referenceBody;
+    string referenceBodyName = body == null ? "" : body.bodyName;
+    int bodyIndex = ActiveBodyIndex();
+
+    object qp = null;
+    double[] q = null;
+    double[] p = null;
+    double[] vesselVelocity = null;
+    double[] tangent = null;
+    double[] normal = null;
+    double[] binormal = null;
+
+    try {
+      qp = InvokeExact(iface, "VesselFromParent", plugin, bodyIndex, guid);
+      q = QPPositionToArray(qp);
+      p = QPVelocityToArray(qp);
+      if (q == null || p == null) DumpObjectFields("PRINCIPIA_VESSEL_FROM_PARENT_QP", qp);
+    } catch (Exception e) {
+      Log("PRINCIPIA_VESSEL_FROM_PARENT_EXCEPTION " + e.GetType().Name + ": " + e.Message);
+    }
+
+    try { vesselVelocity = XYZToArray(InvokeExact(iface, "VesselVelocity", plugin, guid)); } catch (Exception e) { Log("VESSEL_VELOCITY_EXCEPTION " + e); }
+    try { tangent = XYZToArray(InvokeExact(iface, "VesselTangent", plugin, guid)); } catch (Exception e) { Log("VESSEL_TANGENT_EXCEPTION " + e); }
+    try { normal = XYZToArray(InvokeExact(iface, "VesselNormal", plugin, guid)); } catch (Exception e) { Log("VESSEL_NORMAL_EXCEPTION " + e); }
+    try { binormal = XYZToArray(InvokeExact(iface, "VesselBinormal", plugin, guid)); } catch (Exception e) { Log("VESSEL_BINORMAL_EXCEPTION " + e); }
+
+    if (binormal != null)
+    {
+        binormal = new double[] { -binormal[0], -binormal[1], -binormal[2] };
+    }
+
+    double[] qpPositionRawM = q;
+    double[] qpVelocityRawMS = p != null ? p : vesselVelocity;
+    
+    // Fallback anti-null
+    if (qpPositionRawM == null) qpPositionRawM = new double[] { 0.0, 0.0, 0.0 };
+    if (qpVelocityRawMS == null) qpVelocityRawMS = new double[] { 0.0, 0.0, 0.0 };
+    if (tangent == null) tangent = new double[] { 1.0, 0.0, 0.0 };
+
+    double identityAngleDeg;
+    double swapYZAngleDeg;
+
+    string qpToPipelinePermutation = ChooseQpPermutationFromTangent(
+        qpVelocityRawMS,
+        tangent,
+        out identityAngleDeg,
+        out swapYZAngleDeg
+    );
+
+    double[] relRRawM = ApplyPermutation(qpPositionRawM, qpToPipelinePermutation);
+    double[] relVRawMS = ApplyPermutation(qpVelocityRawMS, qpToPipelinePermutation);
+
+    double massTonnes = SafeVesselMassTonnes(vessel, 2.6);
+    double totalThrustKn = SafeAvailableThrustKN(vessel, 2686.87701225281);
+    double specificImpulseS = SafeSpecificImpulseS(vessel, 1000.0);
+
+    string text =
+      "{\n" +
+      "    \"schema\": \"active_vessel_state_v1\",\n" +
+      "    \"source\": \"MGAPrincipiaBridge\",\n" +
+      "    \"state_source\": \"principia.VesselFromParent+qp_permutation_" + qpToPipelinePermutation + "\",\n" +
+      "    \"t_game_s\": " + JsonNum(ut) + ",\n" +
+      "    \"t_spice_s\": " + JsonNum(ut) + ",\n" +
+      "    \"time_note\": \"t_spice_s equals game UT here; Python may add anchor offset if needed\",\n" +
+      "    \"vessel_guid\": \"" + JsonEscape(guid) + "\",\n" +
+      "    \"vessel_name\": \"" + JsonEscape(vessel.vesselName) + "\",\n" +
+      "    \"nav_body\": \"" + JsonEscape(referenceBodyName.ToUpperInvariant()) + "\",\n" +
+      "    \"reference_body\": \"" + JsonEscape(referenceBodyName) + "\",\n" +
+      "    \"reference_body_index\": " + bodyIndex + ",\n" +
+      "    \"situation\": \"" + JsonEscape(vessel.situation.ToString()) + "\",\n" +
+      "    \"rel_r_raw_m\": " + JsonArray3(relRRawM) + ",\n" +
+      "    \"rel_v_raw_m_s\": " + JsonArray3(relVRawMS) + ",\n" +
+      "    \"mass_tonnes\": " + JsonNum(massTonnes) + ",\n" +
+      "    \"available_thrust_kN\": " + JsonNum(totalThrustKn) + ",\n" +
+      "    \"specific_impulse_s_g0\": " + JsonNum(specificImpulseS) + ",\n" +
+      "    \"frame_fix\": {\n" +
+      "      \"schema\": \"active_vessel_state_frame_fix_v1\",\n" +
+      "      \"qp_to_pipeline_permutation\": \"" + JsonEscape(qpToPipelinePermutation) + "\",\n" +
+      "      \"identity_tangent_angle_deg\": " + JsonNum(identityAngleDeg) + ",\n" +
+      "      \"swap_yz_tangent_angle_deg\": " + JsonNum(swapYZAngleDeg) + ",\n" +
+      "      \"note\": \"QP.q/QP.p are exported in adapter order. The chosen permutation is applied to both position and velocity before writing rel_r_raw_m/rel_v_raw_m_s.\"\n" +
+      "    },\n" +
+      "    \"principia_basis\": {\n" +
+      "      \"tangent_raw\": " + JsonArray3(tangent) + ",\n" +
+      "      \"normal_raw\": " + JsonArray3(normal) + ",\n" +
+      "      \"binormal_raw\": " + JsonArray3(binormal) + "\n" +
+      "    },\n" +
+      "    \"debug\": {\n" +
+      "      \"qp_type\": \"" + JsonEscape(qp == null ? "null" : TypeName(qp.GetType())) + "\",\n" +
+      "      \"qp_field_names\": " + ObjectFieldNamesJson(qp) + ",\n" +
+      "      \"qp_position_adapter_order_m\": " + JsonArray3(qpPositionRawM) + ",\n" +
+      "      \"qp_velocity_adapter_order_m_s\": " + JsonArray3(qpVelocityRawMS) + ",\n" +
+      "      \"qp_position_pipeline_raw_m\": " + JsonArray3(relRRawM) + ",\n" +
+      "      \"qp_velocity_pipeline_raw_m_s\": " + JsonArray3(relVRawMS) + ",\n" +
+      "      \"vessel_velocity_raw_m_s\": " + JsonArray3(vesselVelocity) + "\n" +
+      "    }\n" +
+      "  }";
+
+    return text;
+  }
+
+  private static double[] QPPositionToArray(object qp) {
+    if (qp == null) return null;
+    string[] names = new string[] { "q", "position", "r", "degrees_of_freedom", "displacement" };
+    for (int i = 0; i < names.Length; ++i) {
+      object v = GetField(qp, names[i]);
+      double[] a = XYZToArraySafe(v);
+      if (a != null) return a;
+    }
+    return null;
+  }
+
+  private static double[] QPVelocityToArray(object qp) {
+    if (qp == null) return null;
+    string[] names = new string[] { "p", "velocity", "v", "momentum" };
+    for (int i = 0; i < names.Length; ++i) {
+      object v = GetField(qp, names[i]);
+      double[] a = XYZToArraySafe(v);
+      if (a != null) return a;
+    }
+    return null;
+  }
+
+  private static double[] XYZToArraySafe(object xyz) {
+    if (xyz == null) return null;
+    object x = GetField(xyz, "x");
+    object y = GetField(xyz, "y");
+    object z = GetField(xyz, "z");
+    if (x == null || y == null || z == null) return null;
+    try {
+      return new double[] { Convert.ToDouble(x), Convert.ToDouble(y), Convert.ToDouble(z) };
+    } catch {
+      return null;
+    }
+  }
+
+  private static double VecNorm(double[] v) {
+      if (v == null || v.Length < 3) return double.NaN;
+      return Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  }
+
+  private static double VecDot(double[] a, double[] b) {
+      if (a == null || b == null || a.Length < 3 || b.Length < 3) return double.NaN;
+      return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  }
+
+  private static double AngleDeg(double[] a, double[] b) {
+      double na = VecNorm(a);
+      double nb = VecNorm(b);
+
+      if (!(na > 0.0) || !(nb > 0.0)) return double.NaN;
+
+      double c = VecDot(a, b) / (na * nb);
+      if (c > 1.0) c = 1.0;
+      if (c < -1.0) c = -1.0;
+
+      return Math.Acos(c) * 180.0 / Math.PI;
+  }
+
+  private static double[] ApplyPermutation(double[] v, string permutation) {
+      if (v == null || v.Length < 3) return null;
+
+      // identity: [x, y, z]
+      if (permutation == "012") {
+          return new double[] { v[0], v[1], v[2] };
+      }
+
+      // swap Y/Z: [x, z, y]
+      if (permutation == "021") {
+          return new double[] { v[0], v[2], v[1] };
+      }
+
+      // fallback seguro
+      return new double[] { v[0], v[1], v[2] };
+  }
+
+  private static string ChooseQpPermutationFromTangent(
+      double[] qpVelocityAdapterOrder,
+      double[] principiaTangentRaw,
+      out double identityAngleDeg,
+      out double swapYZAngleDeg
+  ) {
+      identityAngleDeg = AngleDeg(qpVelocityAdapterOrder, principiaTangentRaw);
+      swapYZAngleDeg = AngleDeg(ApplyPermutation(qpVelocityAdapterOrder, "021"), principiaTangentRaw);
+
+      // Se não der para auditar, usa o comportamento confirmado nos testes.
+      if (double.IsNaN(identityAngleDeg) || double.IsNaN(swapYZAngleDeg)) {
+          return "021";
+      }
+
+      // Escolhe a ordem cuja velocidade fica alinhada com VesselTangent().
+      if (swapYZAngleDeg + 1e-9 < identityAngleDeg) {
+          return "021";
+      }
+
+      return "012";
+  }
+
+  private static double SafeDouble(double value, double fallback) {
+      if (double.IsNaN(value) || double.IsInfinity(value)) return fallback;
+      return value;
+  }
+
+  private static double SafeVesselMassTonnes(Vessel vessel, double fallback) {
+      try {
+          if (vessel != null && vessel.totalMass > 0.0) {
+              return vessel.totalMass;
+          }
+      } catch {
+      }
+
+      return fallback;
+  }
+
+  private static double SafeAvailableThrustKN(Vessel vessel, double fallback) {
+      try {
+          if (vessel == null || vessel.Parts == null) return fallback;
+
+          double thrust = 0.0;
+
+          foreach (Part p in vessel.Parts) {
+              if (p == null || p.Modules == null) continue;
+
+              foreach (PartModule m in p.Modules) {
+                  ModuleEngines engine = m as ModuleEngines;
+                  if (engine == null) {
+                      ModuleEnginesFX engineFx = m as ModuleEnginesFX;
+                      if (engineFx != null) engine = engineFx;
+                  }
+
+                  if (engine == null) continue;
+                  if (!engine.EngineIgnited) continue;
+                  if (engine.flameout) continue;
+
+                  thrust += engine.maxThrust;
+              }
+          }
+
+          if (thrust > 0.0) return thrust;
+      } catch {
+      }
+
+      return fallback;
+  }
+
+  private static double SafeSpecificImpulseS(Vessel vessel, double fallback) {
+      try {
+          if (vessel == null || vessel.Parts == null) return fallback;
+
+          double weightedIsp = 0.0;
+          double totalThrust = 0.0;
+
+          foreach (Part p in vessel.Parts) {
+              if (p == null || p.Modules == null) continue;
+
+              foreach (PartModule m in p.Modules) {
+                  ModuleEngines engine = m as ModuleEngines;
+                  if (engine == null) {
+                      ModuleEnginesFX engineFx = m as ModuleEnginesFX;
+                      if (engineFx != null) engine = engineFx;
+                  }
+
+                  if (engine == null) continue;
+                  if (!engine.EngineIgnited) continue;
+                  if (engine.flameout) continue;
+
+                  double thrust = engine.maxThrust;
+                  double isp = engine.atmosphereCurve.Evaluate(0.0f);
+
+                  if (thrust > 0.0 && isp > 0.0) {
+                      weightedIsp += thrust * isp;
+                      totalThrust += thrust;
+                  }
+              }
+          }
+
+          if (totalThrust > 0.0) return weightedIsp / totalThrust;
+      } catch {
+      }
+
+      return fallback;
+  }
+
+  private static string ObjectFieldNamesJson(object obj) {
+    if (obj == null) return "[]";
+    try {
+      FieldInfo[] fs = obj.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic |
+                                                BindingFlags.Instance | BindingFlags.DeclaredOnly);
+      string json = "[";
+      for (int i = 0; i < fs.Length; ++i) {
+        if (i > 0) json += ", ";
+        json += "\"" + JsonEscape(fs[i].Name) + "\"";
+      }
+      json += "]";
+      return json;
+    } catch {
+      return "[]";
+    }
+  }
+
+
+  private static EventResult ExportActiveVesselState(MissionEvent ev, Vessel vessel) {
+    EventResult res = new EventResult();
+    res.request_id = ev.request_id;
+    res.mode = ev.mode;
+    res.success = true;
+    res.status = "ok";
+    res.message = "Active vessel state exported";
+    res.extra_json = "  \"active_vessel_state\": " + ActiveVesselStateJson(vessel);
+    Log("EXPORT_ACTIVE_VESSEL_STATE ok vessel=" + (vessel == null ? "null" : vessel.vesselName));
+    return res;
+  }
+
+  private static EventResult DumpAdapterMethods(MissionEvent ev, Type iface) {
+    EventResult res = new EventResult();
+    res.request_id = ev.request_id;
+    res.mode = ev.mode;
+    res.success = true;
+    res.status = "ok";
+    res.message = "Adapter methods dumped";
+
+    MethodInfo[] methods = iface.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+    Array.Sort(methods, delegate(MethodInfo a, MethodInfo b) { return String.Compare(a.Name, b.Name, StringComparison.Ordinal); });
+
+    string json = "  \"adapter_interface_methods\": [\n";
+    for (int i = 0; i < methods.Length; ++i) {
+      MethodInfo m = methods[i];
+      ParameterInfo[] ps = m.GetParameters();
+      string sig = m.Name + "(";
+      for (int j = 0; j < ps.Length; ++j) {
+        if (j > 0) sig += ", ";
+        sig += TypeName(ps[j].ParameterType) + " " + ps[j].Name;
+      }
+      sig += ") -> " + TypeName(m.ReturnType);
+      json += "    \"" + JsonEscape(sig) + "\"" + (i + 1 < methods.Length ? "," : "") + "\n";
+      Log("ADAPTER_METHOD " + sig);
+    }
+    json += "  ]";
+    res.extra_json = json;
+    return res;
+  }
+
+  private static string ActiveVesselStateJson(Vessel vessel) {
+    if (vessel == null) return "null";
+
+    double ut = Planetarium.GetUniversalTime();
+    string guid = vessel.id.ToString();
+    CelestialBody body = vessel.mainBody;
+    if (body == null && vessel.orbit != null) body = vessel.orbit.referenceBody;
+
+    object orbit = null;
+    try { orbit = vessel.orbit; } catch {}
+    if (orbit == null) {
+      object od = GetMemberValue(vessel, "orbitDriver");
+      orbit = GetMemberValue(od, "orbit");
+    }
+
+    double[] orbitPos = VectorLikeToArray(GetMemberValue(orbit, "pos"));
+    double[] orbitVel = VectorLikeToArray(GetMemberValue(orbit, "vel"));
+    double[] relPosAtUt = VectorLikeToArray(InvokeInstance(orbit, "getRelativePositionAtUT", ut));
+    double[] relVelAtUt = VectorLikeToArray(InvokeInstance(orbit, "getOrbitalVelocityAtUT", ut));
+
+    double[] worldPos = VectorLikeToArray(InvokeInstance(vessel, "GetWorldPos3D"));
+    double[] obtVel = VectorLikeToArray(GetMemberValue(vessel, "obt_velocity"));
+    double[] srfVel = VectorLikeToArray(GetMemberValue(vessel, "srf_velocity"));
+    double[] bodyWorldPos = VectorLikeToArray(GetMemberValue(body, "position"));
+    double[] worldRelPos = (worldPos != null && bodyWorldPos != null) ? Sub(worldPos, bodyWorldPos) : null;
+
+    // Legacy/KSP fallback only.  For Principia planning prefer
+    // export_principia_vessel_state, which uses VesselFromParent.
+    double[] selectedR = worldRelPos != null ? worldRelPos : (relPosAtUt != null ? relPosAtUt : orbitPos);
+    double[] selectedV = obtVel != null ? obtVel : (relVelAtUt != null ? relVelAtUt : orbitVel);
+
+    double massTonnes = TryInvokeDouble(vessel, "GetTotalMass", Double.NaN);
+    if (Double.IsNaN(massTonnes)) massTonnes = ToDoubleOrNaN(GetMemberValue(vessel, "totalMass"));
+
+    double totalThrustKn = TryInvokeDouble(vessel, "GetTotalThrust", Double.NaN);
+    if (Double.IsNaN(totalThrustKn)) totalThrustKn = ToDoubleOrNaN(GetMemberValue(vessel, "totalThrust"));
+
+    string referenceBodyName = body == null ? "" : body.bodyName;
+    double bodyRadiusM = body == null ? Double.NaN : body.Radius;
+    int bodyIndex = ActiveBodyIndex();
+
+    string selectedSource = worldRelPos != null && obtVel != null
+        ? "world_pos_minus_body_position/obt_velocity"
+        : (relPosAtUt != null && relVelAtUt != null
+            ? "orbit.getRelativePositionAtUT/getOrbitalVelocityAtUT"
+            : "orbit.pos/orbit.vel");
+
+    string text =
+      "{\n" +
+      "    \"schema\": \"active_vessel_state_v0\",\n" +
+      "    \"source\": \"MGAPrincipiaBridge\",\n" +
+      "    \"t_game_s\": " + JsonNum(ut) + ",\n" +
+      "    \"t_spice_s\": " + JsonNum(ut) + ",\n" +
+      "    \"time_note\": \"t_spice_s equals game UT here; Python may add anchor offset if needed\",\n" +
+      "    \"vessel_guid\": \"" + JsonEscape(guid) + "\",\n" +
+      "    \"vessel_name\": \"" + JsonEscape(vessel.vesselName) + "\",\n" +
+      "    \"nav_body\": \"" + JsonEscape(referenceBodyName.ToUpperInvariant()) + "\",\n" +
+      "    \"reference_body\": \"" + JsonEscape(referenceBodyName) + "\",\n" +
+      "    \"reference_body_index\": " + bodyIndex + ",\n" +
+      "    \"reference_body_radius_m\": " + JsonNum(bodyRadiusM) + ",\n" +
+      "    \"situation\": \"" + JsonEscape(vessel.situation.ToString()) + "\",\n" +
+      "    \"state_source\": \"" + JsonEscape(selectedSource) + "\",\n" +
+      "    \"rel_r_raw_m\": " + JsonArray3(selectedR) + ",\n" +
+      "    \"rel_v_raw_m_s\": " + JsonArray3(selectedV) + ",\n" +
+      "    \"mass_tonnes\": " + JsonNum(massTonnes) + ",\n" +
+      "    \"available_thrust_kN\": " + JsonNum(totalThrustKn) + ",\n" +
+      "    \"specific_impulse_s_g0\": null,\n" +
+      "    \"debug\": {\n" +
+      "      \"orbit_pos_m\": " + JsonArray3(orbitPos) + ",\n" +
+      "      \"orbit_vel_m_s\": " + JsonArray3(orbitVel) + ",\n" +
+      "      \"orbit_relative_position_at_ut_m\": " + JsonArray3(relPosAtUt) + ",\n" +
+      "      \"orbit_orbital_velocity_at_ut_m_s\": " + JsonArray3(relVelAtUt) + ",\n" +
+      "      \"world_pos_m\": " + JsonArray3(worldPos) + ",\n" +
+      "      \"body_world_pos_m\": " + JsonArray3(bodyWorldPos) + ",\n" +
+      "      \"world_relative_position_m\": " + JsonArray3(worldRelPos) + ",\n" +
+      "      \"obt_velocity_m_s\": " + JsonArray3(obtVel) + ",\n" +
+      "      \"srf_velocity_m_s\": " + JsonArray3(srfVel) + "\n" +
+      "    }\n" +
+      "  }";
+
+    return text;
+  }
+
+  private static object GetMemberValue(object obj, string name) {
+    if (obj == null) return null;
+
+    FieldInfo f = FindFieldRecursive(obj.GetType(), name);
+    if (f != null) {
+      try { return f.GetValue(obj); } catch {}
+    }
+
+    PropertyInfo p = FindPropertyRecursive(obj.GetType(), name);
+    if (p != null) {
+      try { return p.GetValue(obj, null); } catch {}
+    }
+
+    return null;
+  }
+
+  private static PropertyInfo FindPropertyRecursive(Type type, string name) {
+    for (Type t = type; t != null; t = t.BaseType) {
+      PropertyInfo p = t.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic |
+                                           BindingFlags.Instance | BindingFlags.Static |
+                                           BindingFlags.DeclaredOnly);
+      if (p != null) return p;
+    }
+    return null;
+  }
+
+  private static object InvokeInstance(object obj, string name, params object[] args) {
+    if (obj == null) return null;
+    try {
+      MethodInfo m = obj.GetType().GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                         .FirstOrDefault(x => x.Name == name && x.GetParameters().Length == args.Length);
+      if (m == null) return null;
+      return m.Invoke(obj, args);
+    } catch (TargetInvocationException e) {
+      Log("INVOKE_INSTANCE_TARGET_EXCEPTION " + name + " inner=" +
+          (e.InnerException == null ? e.ToString() : e.InnerException.ToString()));
+      return null;
+    } catch (Exception e) {
+      Log("INVOKE_INSTANCE_EXCEPTION " + name + " " + e.GetType().Name + ": " + e.Message);
+      return null;
+    }
+  }
+
+  private static double TryInvokeDouble(object obj, string name, double fallback) {
+    object value = InvokeInstance(obj, name);
+    if (value == null) return fallback;
+    try { return Convert.ToDouble(value); } catch { return fallback; }
+  }
+
+  private static double ToDoubleOrNaN(object value) {
+    if (value == null) return Double.NaN;
+    try { return Convert.ToDouble(value); } catch { return Double.NaN; }
+  }
+
+  private static double[] VectorLikeToArray(object vec) {
+    if (vec == null) return null;
+    object x = GetMemberValue(vec, "x");
+    object y = GetMemberValue(vec, "y");
+    object z = GetMemberValue(vec, "z");
+    if (x == null || y == null || z == null) return null;
+    try {
+      return new double[] { Convert.ToDouble(x), Convert.ToDouble(y), Convert.ToDouble(z) };
+    } catch {
+      return null;
+    }
+  }
+
+  private static string JsonArray3(double[] v) {
+    if (v == null || v.Length < 3) return "null";
+    return "[" + JsonNum(v[0]) + ", " + JsonNum(v[1]) + ", " + JsonNum(v[2]) + "]";
+  }
+
   private static MissionEvent ParseMissionEvent(string json) {
     MissionEvent ev = new MissionEvent();
     ev.enabled = GetBool(json, "enabled", false);
@@ -736,6 +1427,10 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
     ev.rollback_on_status_error = GetBool(json, "rollback_on_status_error", true);
     ev.auto_sort_insert_index = GetBool(json, "auto_sort_insert_index", true);
     ev.delete_existing_flight_plan = GetBool(json, "delete_existing_flight_plan", false);
+
+    ev.snapshot_output_path = GetString(json, "snapshot_output_path", "");
+    ev.snapshot_include_ksp_bodies = GetBool(json, "snapshot_include_ksp_bodies", true);
+    ev.snapshot_include_debug = GetBool(json, "snapshot_include_debug", true);
 
     return ev;
   }
@@ -1092,7 +1787,8 @@ public sealed class MGAPrincipiaBridgeMissionEventDaemon : MonoBehaviour {
         "  \"segments_before\": " + r.segments_before + ",\n" +
         "  \"segments_after\": " + r.segments_after + ",\n" +
         "  \"navigation_error_m_s\": " + JsonNum(r.navigation_error_m_s) + ",\n" +
-        "  \"levela_error_m_s\": " + JsonNum(r.levela_error_m_s) + "\n" +
+        "  \"levela_error_m_s\": " + JsonNum(r.levela_error_m_s) +
+        (String.IsNullOrEmpty(r.extra_json) ? "\n" : ",\n" + r.extra_json + "\n") +
         "}\n";
       File.WriteAllText(path, text);
       Log("WROTE_RESULT " + path);

@@ -53,10 +53,12 @@ import itertools
 import json
 import math
 import sys
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from ksp_mga.lambert.pykep_gateway import solve_lambert_pykep
+from collections import Counter
 
 import numpy as np
 import spiceypy as spice
@@ -135,9 +137,16 @@ def turn_angle_max_rad(mu_km3_s2: float, rp_km: float, vinf_km_s: float) -> floa
     return 2.0 * math.asin(max(0.0, min(1.0, 1.0 / denom)))
 
 
+@lru_cache(maxsize=500_000)
+def _spk_state_cached(body: str, et_key: float, central_body: str) -> Tuple[float, ...]:
+    # Rounding removes harmless float-noise and makes repeated beam epochs cacheable.
+    st, _ = spice.spkezr(norm_name(body), float(et_key), "J2000", "NONE", norm_name(central_body))
+    return tuple(float(x) for x in st)
+
+
 def spk_state(body: str, et_s: float, central_body: str) -> np.ndarray:
-    st, _ = spice.spkezr(norm_name(body), float(et_s), "J2000", "NONE", norm_name(central_body))
-    return np.asarray(st, dtype=float)  # km, km/s
+    key = round(float(et_s), 6)
+    return np.asarray(_spk_state_cached(norm_name(body), key, norm_name(central_body)), dtype=float)  # km, km/s
 
 
 def make_tof_grid(min_days: float, max_days: float, step_days: float) -> List[float]:
@@ -159,6 +168,12 @@ def parse_values_days(value: Optional[str]) -> Optional[List[float]]:
     for part in value.replace(",", " ").split():
         out.append(float(part))
     return out
+
+
+def parse_int_values(value: Optional[str]) -> Optional[List[int]]:
+    if not value:
+        return None
+    return [int(x) for x in value.replace(",", " ").split()]
 
 
 def choose_rp_min_km(info: BodyInfo, altitude_km: float, scale: float) -> float:
@@ -236,6 +251,50 @@ def route_score(
     )
 
 
+@lru_cache(maxsize=300_000)
+def _solve_leg_pykep_cached(
+    dep: str,
+    arr: str,
+    t_dep_key: float,
+    tof_days_key: float,
+    central_body: str,
+    central_mu_key: float,
+    max_revs: int,
+) -> Tuple[Tuple[str, Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]], ...]:
+    t_dep_s = float(t_dep_key)
+    tof_days = float(tof_days_key)
+    t_arr_s = t_dep_s + tof_days * DAY_S
+
+    st_dep = spk_state(dep, t_dep_s, central_body)
+    st_arr = spk_state(arr, t_arr_s, central_body)
+
+    r1_tuple = tuple(float(x) for x in st_dep[:3])
+    r2_tuple = tuple(float(x) for x in st_arr[:3])
+    tof_c = float(tof_days * DAY_S)
+    mu_c = float(central_mu_key)
+    max_revs_c = int(max_revs)
+
+    rows = []
+    for cw in (False, True):
+        sols = solve_lambert_pykep(
+            r1_tuple,
+            r2_tuple,
+            tof_c,
+            mu_c,
+            cw=cw,
+            max_revs=max_revs_c,
+        )
+        for sol in sols:
+            rows.append((
+                str(sol.path_label),
+                tuple(float(x) for x in sol.v0_km_s),
+                tuple(float(x) for x in sol.v1_km_s),
+                tuple(float(x) for x in st_dep[3:]),
+                tuple(float(x) for x in st_arr[3:]),
+            ))
+    return tuple(rows)
+
+
 def solve_leg_pykep(
     dep: str,
     arr: str,
@@ -245,51 +304,28 @@ def solve_leg_pykep(
     central_mu_km3_s2: float,
     max_revs: int,
 ) -> list[Leg]:
-    t_arr_s = t_dep_s + tof_days * DAY_S
-
-    st_dep = spk_state(dep, t_dep_s, central_body)
-    st_arr = spk_state(arr, t_arr_s, central_body)
-
-    # O Segredo do Boost.Python: TUPLAS nativas, não listas!
-    r1_tuple = tuple(float(x) for x in st_dep[:3])
-    r2_tuple = tuple(float(x) for x in st_arr[:3])
-    
-    # Garantindo os tipos exatos do C++
-    tof_c = float(tof_days * DAY_S)
-    mu_c = float(central_mu_km3_s2)
-    max_revs_c = int(max_revs)
-
-    legs = []
-
-    for cw in (False, True):
-        # Aqui o PyKEP vai receber exatamente o que pediu
-        sols = solve_lambert_pykep(
-            r1_tuple,
-            r2_tuple,
-            tof_c,
-            mu_c,
-            cw=cw,
-            max_revs=max_revs_c,
+    t_dep_key = round(float(t_dep_s), 6)
+    tof_key = round(float(tof_days), 9)
+    mu_key = round(float(central_mu_km3_s2), 12)
+    t_arr_s = t_dep_key + tof_key * DAY_S
+    rows = _solve_leg_pykep_cached(
+        norm_name(dep), norm_name(arr), t_dep_key, tof_key,
+        norm_name(central_body), mu_key, int(max_revs))
+    return [
+        Leg(
+            dep=norm_name(dep),
+            arr=norm_name(arr),
+            t_dep_s=t_dep_key,
+            t_arr_s=t_arr_s,
+            tof_days=tof_key,
+            path=path,
+            v_dep_km_s=np.asarray(v0, dtype=float),
+            v_arr_km_s=np.asarray(v1, dtype=float),
+            dep_body_v_km_s=np.asarray(vdep_body, dtype=float),
+            arr_body_v_km_s=np.asarray(varr_body, dtype=float),
         )
-
-        for sol in sols:
-            legs.append(
-                Leg(
-                    dep=norm_name(dep),
-                    arr=norm_name(arr),
-                    t_dep_s=t_dep_s,
-                    t_arr_s=t_arr_s,
-                    tof_days=tof_days,
-                    path=sol.path_label,
-                    v_dep_km_s=np.asarray(sol.v0_km_s, dtype=float),
-                    v_arr_km_s=np.asarray(sol.v1_km_s, dtype=float),
-                    dep_body_v_km_s=np.asarray(st_dep[3:], dtype=float),
-                    arr_body_v_km_s=np.asarray(st_arr[3:], dtype=float),
-                )
-            )
-
-    return legs
-
+        for path, v0, v1, vdep_body, varr_body in rows
+    ]
 
 def expand_route(
     route: Route,
@@ -346,18 +382,22 @@ def expand_route(
     return new
 
 
-def passes_filters(route: Route, args: argparse.Namespace, partial: bool) -> bool:
+def filter_rejection_reason(route: Route, args: argparse.Namespace, partial: bool) -> Optional[str]:
     if route.dep_vinf_km_s > args.max_departure_vinf_km_s:
-        return False
+        return "dep_vinf"
     if route.powered_flyby_dv_km_s > args.max_powered_flyby_dv_km_s:
-        return False
+        return "powered_flyby_dv"
     if route.turn_excess_deg > args.max_turn_excess_deg:
-        return False
+        return "turn_excess"
     if route.flybys and route.min_turn_margin_deg < args.min_turn_margin_deg:
-        return False
+        return "turn_margin"
     if not partial and route.arr_vinf_km_s > args.max_arrival_vinf_km_s:
-        return False
-    return True
+        return "arrival_vinf"
+    return None
+
+
+def passes_filters(route: Route, args: argparse.Namespace, partial: bool) -> bool:
+    return filter_rejection_reason(route, args, partial) is None
 
 
 def row_for_route(route: Route) -> Dict[str, object]:
@@ -389,13 +429,6 @@ def row_for_route(route: Route) -> Dict[str, object]:
         row[f"leg{i}_varr_x_km_s"] = float(leg.v_arr_km_s[0])
         row[f"leg{i}_varr_y_km_s"] = float(leg.v_arr_km_s[1])
         row[f"leg{i}_varr_z_km_s"] = float(leg.v_arr_km_s[2])
-        # === A SUA SUGESTÃO: SALVANDO O VETOR EXATO ===
-        row[f"leg{i}_vdep_x_km_s"] = leg.v_dep_km_s[0]
-        row[f"leg{i}_vdep_y_km_s"] = leg.v_dep_km_s[1]
-        row[f"leg{i}_vdep_z_km_s"] = leg.v_dep_km_s[2]
-        row[f"leg{i}_varr_x_km_s"] = leg.v_arr_km_s[0]
-        row[f"leg{i}_varr_y_km_s"] = leg.v_arr_km_s[1]
-        row[f"leg{i}_varr_z_km_s"] = leg.v_arr_km_s[2]
     for fb in route.flybys:
         idx = fb.event_index
         row[f"flyby{idx}_{fb.body}_vinf_in_km_s"] = fb.vinf_in_km_s
@@ -433,7 +466,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--central-body", default="Sun")
     p.add_argument("--central-mu-km3-s2", type=float, default=None)
     p.add_argument("--sequence", nargs="+", required=True)
-    p.add_argument("--start-et", type=float, required=True)
+    p.add_argument("--start-et", type=float, required=False, default=None)
+    p.add_argument("--snapshot-json", type=Path, default=None,
+                   help="Optional live snapshot JSON; if --start-et is omitted, use its game/current time as SPICE ET.")
     p.add_argument("--search-years", type=float, default=30.0)
     p.add_argument("--t0-step-days", type=float, default=20.0)
     p.add_argument("--tof-min-days", nargs="+", type=float, required=True)
@@ -442,10 +477,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--tof-values-days-1", default=None)
     p.add_argument("--tof-values-days-2", default=None)
     p.add_argument("--tof-values-days-3", default=None)
+    p.add_argument("--empty-ok", action="store_true", help="Allow empty output")
     p.add_argument("--tof-values-days-4", default=None)
     p.add_argument("--tof-values-days-5", default=None)
-    p.add_argument("--paths", nargs="+", default=["short", "long"], choices=["short", "long"])
+    p.add_argument("--paths", nargs="+", default=None, choices=["short", "long"],
+                   help="Optional path filter. By default keep every PyKEP solution label. If labels do not match short/long, filtering falls back to keeping all labels.")
     p.add_argument("--beam-width", type=int, default=2000)
+    p.add_argument("--leg-beam-widths", default=None,
+                   help="Optional per-leg beam caps, e.g. '300,800,1500,3000'. Overrides --beam-width per leg.")
+    p.add_argument("--max-t0-samples", type=int, default=0,
+                   help="If >0, evenly subsample the departure epoch grid to this many samples for smoke tests.")
+    p.add_argument("--progress-every", type=int, default=0,
+                   help="Print progress every N Lambert grid tries inside each leg.")
     p.add_argument("--top-n", type=int, default=200)
     p.add_argument("--rp-altitude-km", type=float, default=50.0)
     p.add_argument("--rp-scale", type=float, default=1.05)
@@ -464,12 +507,81 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+
+
+def extract_snapshot_time_s(path: Path) -> float:
+    # 1. Debugging line: Verify exactly what the path resolves to
+    print(f"DEBUG: Attempting to extract time from path: '{path.absolute()}'")
+    
+    # 2. Check if the path is valid and exists
+    if not path or str(path) == '.':
+        raise ValueError(f"Snapshot path is missing or defaulted to current directory: '{path}'")
+    
+    if not path.is_file():
+        raise FileNotFoundError(f"Snapshot file not found at: {path.absolute()}")
+        
+    data = json.loads(path.read_text())
+    # Known schemas used by the project.
+    candidates = [
+        data.get("t_game_s"),
+        data.get("snapshot_t"),
+        data.get("current_time_s"),
+        data.get("initial_time"),
+    ]
+    vessel = data.get("vessel") if isinstance(data.get("vessel"), dict) else {}
+    candidates.extend([
+        vessel.get("t_game_s"),
+        vessel.get("snapshot_t"),
+        vessel.get("current_time_s"),
+    ])
+    for x in candidates:
+        if x is not None:
+            return float(x)
+    raise SystemExit(f"Could not find a time field in snapshot JSON: {path}")
+
+
+def preflight_spice_coverage(seq: Sequence[str], central: str, start_et: float, duration_s: float) -> None:
+    """Fail early with a useful message if the requested interval is outside the SPK."""
+    test_times = [float(start_et), float(start_et + duration_s)]
+    for body in sorted(set(seq + [central])):
+        if norm_name(body) == norm_name(central):
+            continue
+        for t in test_times:
+            try:
+                spk_state(body, t, central)
+            except Exception as exc:
+                raise SystemExit(
+                    "SPICE coverage preflight failed.\n"
+                    f"  body={norm_name(body)} central={norm_name(central)} et={t:.6f}\n"
+                    "  This usually means --start-et is not in the kernel time axis.\n"
+                    "  For the current Principia/JNSQ kernel, use the live snapshot game time, e.g.\n"
+                    "    --snapshot-json /path/to/principia_live_navigation_snapshot_v0_1.json\n"
+                    "  or pass --start-et around the snapshot_t_game_s/current UT, not 81.85 s after J2000.\n"
+                    f"  Original SPICE error: {exc}"
+                )
+
 def main() -> int:
     args = parse_args()
-    seq = [norm_name(x) for x in args.sequence]
+    
+    # DEBUG: See what the worker is actually receiving
+    print(f"DEBUG: snapshot_json={args.snapshot_json}, start_et={args.start_et}")
+    # argparse uses nargs='+'. Support all common user forms:
+    #   --sequence Kerbin Eve Jool
+    #   --sequence "Kerbin Eve Jool"
+    #   --sequence KERBIN-EVE-JOOL
+    if len(args.sequence) == 1:
+        seq_tokens = args.sequence[0].replace("->", " ").replace("-", " ").split()
+    else:
+        seq_tokens = args.sequence
+    seq = [norm_name(x) for x in seq_tokens]
     nlegs = len(seq) - 1
     if len(args.tof_min_days) != nlegs or len(args.tof_max_days) != nlegs or len(args.tof_step_days) != nlegs:
         raise SystemExit(f"tof-min/max/step precisam ter {nlegs} valores")
+
+    if args.start_et is None:
+        if args.snapshot_json is None:
+            raise SystemExit("Provide --start-et or --snapshot-json")
+        args.start_et = extract_snapshot_time_s(args.snapshot_json)
 
     spice.furnsh(str(args.tpc))
     spice.furnsh(str(args.bsp))
@@ -501,10 +613,23 @@ def main() -> int:
             raise SystemExit(f"leg {i+1}: grid de TOF vazio")
         tof_grids.append(vals)
 
+    preflight_spice_coverage(seq, central, float(args.start_et), float(args.search_years) * 365.25 * DAY_S)
+
     t0_grid = make_tof_grid(0.0, args.search_years * 365.25, args.t0_step_days)
     t0_epochs = [args.start_et + d * DAY_S for d in t0_grid]
+    if args.max_t0_samples and len(t0_epochs) > args.max_t0_samples:
+        idx = np.linspace(0, len(t0_epochs) - 1, int(args.max_t0_samples))
+        keep = sorted({int(round(i)) for i in idx})
+        t0_epochs = [t0_epochs[i] for i in keep]
 
-    print("=== SPICE LAMBERT BEAM SEARCH V0.1 ===")
+    leg_beam_widths = parse_int_values(args.leg_beam_widths) or []
+
+    def beam_cap_for_leg(i: int) -> int:
+        if 1 <= i <= len(leg_beam_widths):
+            return int(leg_beam_widths[i - 1])
+        return int(args.beam_width)
+
+    print("=== SPICE LAMBERT BEAM SEARCH V0.4 ===")
     print(f"sequence: {' -> '.join(seq)}")
     print(f"central_mu={float(central_mu):.17g} km^3/s^2")
     print(f"t0 samples={len(t0_epochs)} step={args.t0_step_days} d search={args.search_years} y")
@@ -524,14 +649,44 @@ def main() -> int:
         final_leg = leg_index == nlegs
         expanded: List[Route] = []
         tries = 0
+        raw_solved = 0
         solved = 0
+        path_filter_fallbacks = 0
+        path_labels_seen: set[str] = set()
+        reject_counts: Counter[str] = Counter()
+        reject_examples: dict[str, Route] = {}
         for route in beam:
             t_dep = route.epochs_s[-1]
             for tof_days in tof_grids[leg_index - 1]:
                 tries += 1
                 
-                # Chama o PyKEP passando o args.max_revs
-                legs = solve_leg_pykep(dep, arr, t_dep, tof_days, central, float(central_mu), args.max_revs)
+                # Chama o PyKEP passando o args.max_revs.
+                # Important: PyKEP gateway path labels are not guaranteed to be literally
+                # "short"/"long" across versions.  Count raw solutions before any
+                # optional filtering and fall back to all labels when the requested
+                # user-facing filter would erase every solution for this Lambert call.
+                legs_raw = solve_leg_pykep(dep, arr, t_dep, tof_days, central, float(central_mu), args.max_revs)
+                raw_solved += len(legs_raw)
+                for _leg in legs_raw:
+                    path_labels_seen.add(str(_leg.path))
+                legs = legs_raw
+                if args.paths and legs_raw:
+                    allowed_paths = {str(p).lower() for p in args.paths}
+                    filtered = [
+                        l for l in legs_raw
+                        if str(l.path).lower() in allowed_paths
+                        or any(str(l.path).lower().startswith(p) for p in allowed_paths)
+                        or any(p in str(l.path).lower() for p in allowed_paths)
+                    ]
+                    if filtered:
+                        legs = filtered
+                    else:
+                        # Do not turn a good Lambert solution set into solved=0 only
+                        # because the gateway label taxonomy differs from our CLI words.
+                        path_filter_fallbacks += 1
+                        legs = legs_raw
+                if args.progress_every and tries % args.progress_every == 0:
+                    print(f"  [leg {leg_index}] tries={tries} raw_solved={raw_solved} solved={solved} expanded={len(expanded)} labels={sorted(path_labels_seen)[:8]} cache_spk={_spk_state_cached.cache_info()} cache_lambert={_solve_leg_pykep_cached.cache_info()}", flush=True)
                 
                 # Itera sobre todas as soluções encontradas (curtas, longas, multi-rev)
                 for leg in legs:
@@ -547,17 +702,40 @@ def main() -> int:
                         scoring_args=args,
                     )
                     
-                    if passes_filters(new_route, args, partial=not final_leg):
+                    reason = filter_rejection_reason(new_route, args, partial=not final_leg)
+                    if reason is None:
                         expanded.append(new_route)
+                    else:
+                        reject_counts[reason] += 1
+                        reject_examples.setdefault(reason, new_route)
         expanded.sort(key=lambda r: r.cost)
-        beam = expanded[: args.beam_width]
+        cap = beam_cap_for_leg(leg_index)
+        beam = expanded[:cap]
         print(
             f"[LEG {leg_index}/{nlegs}] {dep}->{arr}: "
-            f"tries={tries} solved={solved} kept={len(beam)} "
-            f"best_cost={beam[0].cost if beam else float('nan'):.6g}"
+            f"tries={tries} raw_solved={raw_solved} solved={solved} kept={len(beam)} cap={cap} "
+            f"best_cost={beam[0].cost if beam else float('nan'):.6g} "
+            f"path_fallbacks={path_filter_fallbacks} labels={sorted(path_labels_seen)[:12]} "
+            f"rejects={dict(reject_counts)} "
+            f"spk_cache={_spk_state_cached.cache_info()} lambert_cache={_solve_leg_pykep_cached.cache_info()}"
         )
+        if reject_counts:
+            for reason, ex in sorted(reject_examples.items()):
+                print(
+                    f"  reject_example[{reason}]: "
+                    f"dep={ex.dep_vinf_km_s:.3f} arr={ex.arr_vinf_km_s:.3f} "
+                    f"powered={ex.powered_flyby_dv_km_s:.3f} "
+                    f"turn_excess={ex.turn_excess_deg:.3f} "
+                    f"margin={ex.min_turn_margin_deg if math.isfinite(ex.min_turn_margin_deg) else float('nan'):.3f} "
+                    f"tof={ex.tof_total_days:.1f} cost={ex.cost:.3f}"
+                )
         if not beam:
             print("[FAIL] beam vazio; relaxe filtros ou aumente grade.")
+            if args.empty_ok:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text("")
+                print(f"[EMPTY] wrote empty {args.output}")
+                return 0
             return 1
 
     final_routes = sorted(beam, key=lambda r: (r.raw_sum_km_s, r.powered_flyby_dv_km_s, r.cost))[: args.top_n]

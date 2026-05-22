@@ -1,0 +1,170 @@
+mcs -t:library \                                                    
+  -out:MGAPrincipiaBridge.dll \
+  -r:"/home/matheus/.steam/steam/steamapps/common/Kerbal Space Program/KSP_x64_Data/Managed/Assembly-CSharp.dll" \
+  -r:"/home/matheus/.steam/steam/steamapps/common/Kerbal Space Program/KSP_x64_Data/Managed/UnityEngine.dll" \
+  -r:"/home/matheus/.steam/steam/steamapps/common/Kerbal Space Program/KSP_x64_Data/Managed/UnityEngine.CoreModule.dll" \
+  -r:"/home/matheus/.steam/steam/steamapps/common/Kerbal Space Program/KSP_x64_Data/Managed/UnityEngine.UI.dll" \
+  ksp_bridge/MGAPrincipiaBridge/MGAPrincipiaBridge_with_live_navigation_snapshot_v0_1.cs
+
+export SNAP="/home/matheus/.steam/steam/steamapps/common/Kerbal Space Program/GameData/MGAPlanner/principia_live_navigation_snapshot_v0_1.json"
+
+export SERVER="/home/matheus/Principia/bin/x64/principia_impulsive_particle_server"
+
+export B64="data/principia/live_probe/principia_serialized_plugin_rocket.b64"
+
+export BODYCAT="data/catalogs/jnsq/body_catalog.json"
+
+export BSP="data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.bsp"
+
+export TPC="data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.ids.tpc"
+
+export CAND="data/runs/family_search_smoke/candidate_seed.csv"
+
+export OUT="data/runs/game_export/current_orbit/snap_candidate_hunt01"
+
+{
+  "enabled": true,
+  "request_id": "live_nav_snapshot_v0_1_now",
+  "mode": "principia_live_navigation_snapshot_v0_1",
+  "force_nonce": "001",
+  "snapshot_output_path": "GameData/MGAPlanner/principia_live_navigation_snapshot_v0_1.json",
+  "snapshot_include_ksp_bodies": true,
+  "snapshot_include_debug": true
+}
+
+jq '{
+  schema,
+  t_game_s,
+  vessel: {
+    vessel_guid: .vessel.vessel_guid,
+    nav_body: .vessel.nav_body,
+    rel_r_raw_m: .vessel.rel_r_raw_m,
+    rel_v_raw_m_s: .vessel.rel_v_raw_m_s,
+    mass_tonnes: .vessel.mass_tonnes,
+    available_thrust_kN: .vessel.available_thrust_kN,
+    specific_impulse_s_g0: .vessel.specific_impulse_s_g0
+  }
+}' "$SNAP"
+
+python scripts/search_families.py \
+  --beam-script scripts/search_beam.py \
+  --bsp data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.bsp \
+  --tpc data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.ids.tpc \
+  --metadata data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.metadata.json \
+  --body-catalog data/catalogs/jnsq/body_catalog.json \
+  --central-body Sun \
+  --origin Kerbin \
+  --target Jool \
+  --allowed-flybys Kerbin Eve Duna \
+  --max-flybys 3 \
+  --snapshot-json "$SNAP" \
+  --search-years 15 \
+  --t0-step-days 20 \
+  --grid-mode smoke \
+  --beam-width 700 \
+  --leg-beam-widths 200,400,700,1000 \
+  --max-t0-samples 160 \
+  --per-sequence-top-n 30 \
+  --top-n 200 \
+  --max-revs 1 \
+  --max-departure-vinf-km-s 8 \
+  --max-arrival-vinf-km-s 18 \
+  --max-powered-flyby-dv-km-s 6.0 \
+  --max-turn-excess-deg 20 \
+  --min-turn-margin-deg -15 \
+  --powered-weight 150 \
+  --turn-weight 300 \
+  --sort-by raw_sum \
+  --jobs 4 \
+  --sequence-timeout-s 240 \
+  --resume \
+  --empty-ok \
+  --work-dir data/runs/family_search_fast_scout01 \
+  --output data/runs/family_search_fast_scout01/merged_candidates.csv
+  
+  python scripts/normalize_candidates.py \
+  --input data/runs/family_search_fast_scout01/merged_candidates.csv \
+  --output data/runs/family_search_fast_scout01/candidate_seed.csv \
+  --top-n 500
+  
+  OUT=data/runs/game_export/current_orbit/snap_candidate_hunt_scout01
+CAND=data/runs/family_search_fast_scout01/candidate_seed.csv
+SNAP="/home/matheus/.steam/steam/steamapps/common/Kerbal Space Program/GameData/MGAPlanner/principia_live_navigation_snapshot_v0_1.json"
+BODYCAT=data/catalogs/jnsq/body_catalog.json
+BSP=data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.bsp
+TPC=data/kernels/jnsq/v0_3/jnsq_principia_native_v0_3_1000y_1h_deg9.ids.tpc
+
+mkdir -p "$OUT"
+
+python scripts/rank_pykep_candidates_by_snapshot_executability_v0.py \
+  --candidate-csv "$CAND" \
+  --snapshot-json "$SNAP" \
+  --body-catalog "$BODYCAT" \
+  --bsp "$BSP" \
+  --tpc "$TPC" \
+  --central-body Sun \
+  --dep-body KERBIN \
+  --phase-offset-min-s -43200 \
+  --phase-offset-max-s 43200 \
+  --phase-offset-step-s 120 \
+  --max-normal-m-s 350 \
+  --max-binormal-m-s 700 \
+  --max-out-of-plane-fraction 0.35 \
+  --max-phase-abs-deg 12 \
+  --max-dv-m-s 4500 \
+  --max-plane-angle-deg 20 \
+  --top-n 300 \
+  --output-dir "$OUT"
+  
+  python - <<'PY'
+import json
+p = "data/runs/game_export/current_orbit/snap_candidate_hunt_scout01/candidate_departure_executability_rank.json"
+d = json.load(open(p))
+rows = d.get("top") or d.get("candidates") or []
+for i, r in enumerate(rows[:30], 1):
+    print(
+        f"{i:02d} "
+        f"row={r.get('row_index0')} "
+        f"pass={r.get('ok')} "
+        f"seq={r.get('sequence')} "
+        f"dv={r.get('dv_norm_m_s', float('nan')):8.1f} "
+        f"T={r.get('dv_tangent_m_s', float('nan')):8.1f} "
+        f"N={r.get('dv_normal_m_s', float('nan')):8.1f} "
+        f"B={r.get('dv_binormal_m_s', float('nan')):8.1f} "
+        f"phase={r.get('phase_abs_deg', r.get('phase_deg', float('nan'))):7.3f} "
+        f"plane={r.get('plane_angle_deg', float('nan')):7.3f} "
+        f"score={r.get('score_exec', float('nan')):10.1f}"
+    )
+PY
+
+OUT=data/runs/game_export/current_orbit/snap_candidate_hunt_scout01
+
+mkdir -p "$OUT/principia_probe_rank_auto_leg"
+
+python scripts/rank_pykep_candidates_by_principia_probe_v0.py \
+  --server /home/matheus/Principia/bin/x64/principia_impulsive_particle_server \
+  --plugin-on-argv \
+  --plugin-b64 data/principia/live_probe/principia_serialized_plugin_rocket.b64 \
+  --rank-json "$OUT/candidate_departure_executability_rank.json" \
+  --row-index0 38 \
+  --row-index0 68 \
+  --row-index0 57 \
+  --row-index0 151 \
+  --jobs 4 \
+  --dep-body AUTO \
+  --arr-body AUTO \
+  --nav-body AUTO \
+  --flip-binormal \
+  --scan-center-offset-days 0 \
+  --scan-half-width-days 30 \
+  --samples 121 \
+  --target-ca-km 200000 \
+  --radial-velocity-scale-s 1000 \
+  --probe-steps 1 \
+  --fd-step-m-s 1 \
+  --step-max-m-s 80 \
+  --lm 1e-4 \
+  --line-search 1,0.5,0.25,0.125 \
+  --residual-scale-km 100000 \
+  --quiet-stderr \
+  --output-dir "$OUT/principia_probe_rank_selected01"

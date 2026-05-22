@@ -1,0 +1,75 @@
+{
+  "schema": "active_vessel_state_v0",
+  "source": "MGAPrincipiaBridge",
+  "t_game_s": 822531181.68961394,
+  "t_spice_s": 822531181.68961394,
+  "time_note": "t_spice_s equals game UT here; Python may add anchor offset if needed",
+  "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
+  "vessel_name": "Nave sem título",
+  "nav_body": "KERBIN",
+  "reference_body": "Kerbin",
+  "reference_body_index": 1,
+  "reference_body_radius_m": 1600000,
+  "situation": "ORBITING",
+  "state_source": "world_pos_minus_body_position/obt_velocity",
+  "rel_r_raw_m": [
+    1216781.67591946,
+    451.54915701116454,
+    -2353673.1686817938
+  ],
+  "rel_v_raw_m_s": [
+    2732.9282003743474,
+    0.94221951835067885,
+    1405.5163667042832
+  ],
+  "mass_tonnes": 2.1676197052001953,
+  "available_thrust_kN": null,
+  "specific_impulse_s_g0": null,
+  "debug": {
+    "orbit_pos_m": [
+      1216781.67591946,
+      -2353673.1686817938,
+      451.54915701116454
+    ],
+    "orbit_vel_m_s": [
+      2732.9282003743474,
+      1405.5163667042832,
+      0.94221951835067885
+    ],
+    "orbit_relative_position_at_ut_m": [
+      1216781.6759194587,
+      -2353673.1686817943,
+      451.549157011164
+    ],
+    "orbit_orbital_velocity_at_ut_m_s": [
+      2732.9282003743483,
+      1405.5163667042816,
+      0.94221951835067941
+    ],
+    "world_pos_m": [
+      -0.29370184467038818,
+      0.0069831814998029054,
+      -1.1473515076258729
+    ],
+    "body_world_pos_m": [
+      -1216781.9696213047,
+      -451.54217382966476,
+      2353672.0213302863
+    ],
+    "world_relative_position_m": [
+      1216781.67591946,
+      451.54915701116454,
+      -2353673.1686817938
+    ],
+    "obt_velocity_m_s": [
+      2732.9282003743474,
+      0.94221951835067885,
+      1405.5163667042832
+    ],
+    "srf_velocity_m_s": [
+      2389.6624298442016,
+      0.94221951835067874,
+      1228.0577861718889
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "schema": "active_vessel_state_v1",
+  "source": "MGAPrincipiaBridge",
+  "state_source": "principia.VesselFromParent",
+  "t_game_s": 822531192.30960381,
+  "t_spice_s": 822531192.30960381,
+  "time_note": "t_spice_s equals game UT here; Python may add anchor offset if needed",
+  "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
+  "vessel_name": "Nave sem título",
+  "nav_body": "KERBIN",
+  "reference_body": "Kerbin",
+  "reference_body_index": 1,
+  "situation": "ORBITING",
+  "rel_r_raw_m": [
+    1243678.9482660242,
+    -2339650.1133076036,
+    461.52095174008019
+  ],
+  "rel_v_raw_m_s": [
+    2716.5445294867268,
+    1436.7494573968045,
+    0.93568076470626671
+  ],
+  "mass_tonnes": 2.1676197052001953,
+  "available_thrust_kN": null,
+  "specific_impulse_s_g0": null,
+  "principia_basis": {
+    "tangent_raw": [
+      0.883979034487391,
+      0.00030447584053780452,
+      0.46752644190591541
+    ],
+    "normal_raw": [
+      -0.46752640982256854,
+      -0.00017355743725477879,
+      0.88397908685456872
+    ],
+    "binormal_raw": [
+      -0.00035029296659425113,
+      0.999999938586138,
+      0.000011070639209576072
+    ]
+  },
+  "debug": {
+    "qp_type": "principia.ksp_plugin_adapter.QP",
+    "qp_field_names": [
+      "q",
+      "p"
+    ],
+    "qp_position_raw_m": [
+      1243678.9482660242,
+      -2339650.1133076036,
+      461.52095174008019
+    ],
+    "qp_velocity_raw_m_s": [
+      2716.5445294867268,
+      1436.7494573968045,
+      0.93568076470626671
+    ],
+    "vessel_velocity_raw_m_s": [
+      2716.5445294867263,
+      0.93568076470501182,
+      1436.7494573968049
+    ]
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "schema": "active_vessel_state_v1",
+  "source": "MGAPrincipiaBridge",
+  "state_source": "principia.VesselFromParent+frame_permutation_021",
+  "t_game_s": 822531192.3096038,
+  "t_spice_s": 822531192.3096038,
+  "time_note": "t_spice_s equals game UT here; Python may add anchor offset if needed",
+  "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
+  "vessel_name": "Nave sem t\u00edtulo",
+  "nav_body": "KERBIN",
+  "reference_body": "Kerbin",
+  "reference_body_index": 1,
+  "situation": "ORBITING",
+  "rel_r_raw_m": [
+    1243678.9482660242,
+    461.5209517400802,
+    -2339650.1133076036
+  ],
+  "rel_v_raw_m_s": [
+    2716.544529486727,
+    0.9356807647062667,
+    1436.7494573968045
+  ],
+  "mass_tonnes": 2.1676197052001953,
+  "available_thrust_kN": 2686.87701225281,
+  "specific_impulse_s_g0": 1000.0,
+  "principia_basis": {
+    "tangent_raw": [
+      0.883979034487391,
+      0.0003044758405378045,
+      0.4675264419059154
+    ],
+    "normal_raw": [
+      -0.46752640982256854,
+      -0.0001735574372547788,
+      0.8839790868545687
+    ],
+    "binormal_raw": [
+      -0.00035029296659425113,
+      0.999999938586138,
+      1.1070639209576072e-05
+    ]
+  },
+  "debug": {
+    "qp_type": "principia.ksp_plugin_adapter.QP",
+    "qp_field_names": [
+      "q",
+      "p"
+    ],
+    "qp_position_raw_m": [
+      1243678.9482660242,
+      -2339650.1133076036,
+      461.5209517400802
+    ],
+    "qp_velocity_raw_m_s": [
+      2716.544529486727,
+      1436.7494573968045,
+      0.9356807647062667
+    ],
+    "vessel_velocity_raw_m_s": [
+      2716.5445294867263,
+      0.9356807647050118,
+      1436.749457396805
+    ]
+  },
+  "rel_r_raw_m_original_export": [
+    1243678.9482660242,
+    -2339650.1133076036,
+    461.5209517400802
+  ],
+  "rel_v_raw_m_s_original_export": [
+    2716.544529486727,
+    1436.7494573968045,
+    0.9356807647062667
+  ],
+  "frame_fix": {
+    "schema": "active_vessel_state_frame_fix_v0",
+    "chosen_permutation": [
+      0,
+      2,
+      1
+    ],
+    "old_tangent_angle_deg": 38.58317569503748,
+    "new_tangent_angle_deg": 0.0,
+    "candidate_angles_deg": [
+      {
+        "permutation": [
+          0,
+          2,
+          1
+        ],
+        "angle_deg": 0.0
+      },
+      {
+        "permutation": [
+          1,
+          2,
+          0
+        ],
+        "angle_deg": 34.2522916414949
+      },
+      {
+        "permutation": [
+          0,
+          1,
+          2
+        ],
+        "angle_deg": 38.58317569503748
+      },
+      {
+        "permutation": [
+          1,
+          0,
+          2
+        ],
+        "angle_deg": 65.56283410797663
+      },
+      {
+        "permutation": [
+          2,
+          1,
+          0
+        ],
+        "angle_deg": 65.56283410797666
+      },
+      {
+        "permutation": [
+          2,
+          0,
+          1
+        ],
+        "angle_deg": 77.34269097988782
+      }
+    ],
+    "note": "Applied same axis permutation to rel_r_raw_m and rel_v_raw_m_s."
+  }
+}

@@ -1,14 +1,10 @@
 {
   "enabled": true,
-  "request_id": "rank12_departure_visuall_1778539495025749711",
-  "mode": "insert_navigation",
-  "dedupe_tag": "rank12_departure_visuall_1778539495025749711",
   "vessel_guid": "60735c81-7e29-4c06-9551-9e5283e37586",
   "ensure_flight_plan": true,
   "extend_existing_flight_plan": true,
-  "plan_final_time": 749976328.8376112,
   "mass_tonnes": 2.6,
-  "insert_index": -1,
+  "insert_index": 0,
   "burn_template": "json",
   "thrust_kN": 2686.87701225281,
   "specific_impulse_s_g0": 1000.0,
@@ -18,32 +14,29 @@
   "frame_centre_index": -1,
   "frame_primary_index": -1,
   "frame_secondary_index": -1,
-  "initial_time": 749952328.8376112,
-  "delta_v_navigation_m_s": [
-    1873.0646550127958,
-    0.0,
-    0.0
-  ],
   "placeholder_dv_m_s": 0.001,
   "require_status_ok": true,
   "cleanup_on_error": true,
   "tolerance_time_s": 0.01,
   "tolerance_dv_m_s": 1e-06,
-  "_diagnostic": {
-    "ut_now": 749952028.8376112,
-    "body": "Kerbin",
-    "r_m": 2649747.910216506,
-    "v_now_m_s": 3072.9885461209665,
-    "v_escape_m_s": 4353.043821083092,
-    "vinf_target_m_s": 2348.286984202709,
-    "v_hyp_m_s": 4946.053201133762,
-    "dv_body_m_s": [
-      -1123.8125426662916,
-      0.7781163908501969,
-      -1498.4712093794165
-    ],
-    "dv_body_norm_m_s": 1873.0646550127958,
-    "note": "Energy-only departure smoke; direction is prograde, not B-plane targeted."
-  },
-  "force_nonce": "1778539495332537917"
+  "one_shot": true,
+  "disable_after_success": true,
+  "request_id": "rank12_physical_departure_attempt0",
+  "dedupe_tag": "rank12_physical_departure",
+  "event_key": "rank12_propn_impulse0",
+  "attempt": 0,
+  "mode": "insert_levela",
+  "initial_time": 749952081.851686,
+  "plan_final_time": 749952681.851686,
+  "delta_v_levela_m_s": [
+    -658.2590776572855,
+    -57.159021148437404,
+    1395.8040647625025
+  ],
+  "require_warp_close": true,
+  "max_lead_before_insert_s": 600.0,
+  "reject_long_plan_before_first_burn": true,
+  "max_first_plan_duration_s": 900.0,
+  "rollback_on_status_error": true,
+  "auto_sort_insert_index": true
 }

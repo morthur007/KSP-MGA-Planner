@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-spice_flyby_family_search_v0_1_mp.py
+spice_flyby_family_search_v0_4_mp.py
 
 Sequence-family search wrapper for fast in-game MGA candidate discovery.
 NOW WITH MULTIPROCESSING: Runs multiple sequence families in parallel using ProcessPoolExecutor.
@@ -85,19 +85,36 @@ def enumerate_sequences(origin: str, target: str, allowed: Sequence[str], max_fl
     return sequences
 
 
-def leg_grid(dep: str, arr: str) -> Tuple[float, float, float, str | None]:
+def leg_grid(dep: str, arr: str, mode: str = "balanced") -> Tuple[float, float, float, str | None]:
     dep = norm_name(dep)
     arr = norm_name(arr)
 
+    # Smoke mode is intentionally narrow for interactive testing. It should find
+    # plausible candidates quickly, not cover the whole design space.
+    if mode == "smoke":
+        if dep == arr:
+            return 292.0, 876.0, 73.0, "292 365 438 584 730 876"
+        if {dep, arr} == {"KERBIN", "EVE"}:
+            return 120.0, 500.0, 40.0, None
+        if {dep, arr} == {"KERBIN", "DUNA"}:
+            return 100.0, 500.0, 40.0, None
+        if arr == "JOOL":
+            return 600.0, 2500.0, 100.0, None
+        return 120.0, 900.0, 80.0, None
+
+    # Balanced mode is the default: enough coverage for candidate generation,
+    # but not the huge historical grid that made tests impractical.
     if dep == arr:
         return 250.0, 1300.0, 20.0, "292 365 438 584 730 876 1095"
     if {dep, arr} == {"KERBIN", "EVE"}:
         return 90.0, 800.0, 20.0, None
+    if {dep, arr} == {"KERBIN", "DUNA"}:
+        return 100.0, 900.0, 20.0, None
     if arr == "JOOL":
-        return 500.0, 5000.0, 40.0, None
+        return 500.0, 3500.0, 80.0, None
     if dep == "JOOL":
-        return 500.0, 5000.0, 40.0, None
-    return 120.0, 2500.0, 40.0, None
+        return 500.0, 3500.0, 80.0, None
+    return 120.0, 1600.0, 40.0, None
 
 
 def build_beam_command(args: argparse.Namespace, seq: Sequence[str], output_csv: Path) -> List[str]:
@@ -107,7 +124,7 @@ def build_beam_command(args: argparse.Namespace, seq: Sequence[str], output_csv:
     explicit_by_leg: Dict[int, str] = {}
 
     for i, (dep, arr) in enumerate(zip(seq[:-1], seq[1:]), start=1):
-        mn, mx, st, explicit = leg_grid(dep, arr)
+        mn, mx, st, explicit = leg_grid(dep, arr, args.grid_mode)
         mins.append(str(mn))
         maxs.append(str(mx))
         steps.append(str(st))
@@ -121,7 +138,24 @@ def build_beam_command(args: argparse.Namespace, seq: Sequence[str], output_csv:
         "--tpc", str(args.tpc),
         "--central-body", args.central_body,
         "--sequence", *seq,
-        "--start-et", str(args.start_et),
+    ]
+
+    # Forward the epoch source to the child beam search.
+    # We prioritize the snapshot file if it exists.
+    if args.snapshot_json and args.snapshot_json.is_file():
+        cmd.extend(["--snapshot-json", str(args.snapshot_json)])
+    
+    # Otherwise, fallback to the manual start_et
+    elif args.start_et is not None:
+        cmd.extend(["--start-et", str(args.start_et)])
+    
+    # If neither exists or is valid, stop the process immediately with an error
+    else:
+        raise ValueError(
+            f"Snapshot file not found at '{args.snapshot_json}' and no valid --start-et provided."
+        )
+
+    cmd.extend([
         "--search-years", str(args.search_years),
         "--t0-step-days", str(args.t0_step_days),
         "--tof-min-days", *mins,
@@ -138,7 +172,16 @@ def build_beam_command(args: argparse.Namespace, seq: Sequence[str], output_csv:
         "--turn-weight", str(args.turn_weight),
         "--max-revs", str(args.max_revs),
         "--output", str(output_csv),
-    ]
+    ])
+    if args.empty_ok:
+        cmd.append("--empty-ok")
+
+    if args.leg_beam_widths:
+        cmd.extend(["--leg-beam-widths", args.leg_beam_widths])
+    if args.max_t0_samples:
+        cmd.extend(["--max-t0-samples", str(args.max_t0_samples)])
+    if args.paths:
+        cmd.extend(["--paths", *args.paths])
 
     for p in args.metadata:
         cmd.extend(["--metadata", str(p)])
@@ -231,14 +274,29 @@ def evaluate_sequence(args_tuple):
     if args.dry_run:
         return idx, total_seqs, label, "dry-run", []
 
+    if args.resume and out_csv.exists() and out_csv.stat().st_size > 0:
+        rows = read_rows(out_csv, seq)
+        return idx, total_seqs, label, "ok-resume", rows
+
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with log_txt.open("w", encoding="utf-8") as log:
         log.write("$ " + " ".join(cmd) + "\n\n")
         log.flush()
-        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, text=True)
+        try:
+            proc = subprocess.run(
+                cmd, stdout=log, stderr=subprocess.STDOUT, text=True,
+                timeout=args.sequence_timeout_s if args.sequence_timeout_s > 0 else None)
+        except subprocess.TimeoutExpired:
+            return idx, total_seqs, label, f"timeout>{args.sequence_timeout_s}s", []
 
     if proc.returncode != 0:
-        return idx, total_seqs, label, f"failed rc={proc.returncode}", []
+        tail = ""
+        try:
+            lines = log_txt.read_text(errors="replace").splitlines()[-8:]
+            tail = " | " + " / ".join(lines)
+        except Exception:
+            pass
+        return idx, total_seqs, label, f"failed rc={proc.returncode}{tail}", []
 
     rows = read_rows(out_csv, seq)
     return idx, total_seqs, label, "ok", rows
@@ -256,13 +314,27 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target", required=True)
     p.add_argument("--allowed-flybys", nargs="+", required=True)
     p.add_argument("--max-flybys", type=int, default=3)
-    p.add_argument("--start-et", type=float, required=True)
+    p.add_argument("--start-et", type=float, required=False, default=None)
+    p.add_argument("--snapshot-json", type=Path, default=None, # Change this
+               help="Optional live snapshot JSON.")
     p.add_argument("--search-years", type=float, default=30.0)
     p.add_argument("--t0-step-days", type=float, default=20.0)
     p.add_argument("--beam-width", type=int, default=3000)
+    p.add_argument("--leg-beam-widths", default=None,
+                   help="Optional per-leg beam caps passed to search_beam, e.g. '200,500,1000,2000'.")
+    p.add_argument("--max-t0-samples", type=int, default=0,
+                   help="Optional cap on departure epoch samples passed to search_beam for smoke tests.")
+    p.add_argument("--paths", nargs="+", default=[], choices=["short", "long"],
+                   help="Optional Lambert path labels passed to search_beam. Use 'short' for faster smoke tests.")
+    p.add_argument("--grid-mode", choices=["smoke", "balanced"], default="balanced",
+                   help="TOF grid preset. 'smoke' is much faster and narrower.")
+    p.add_argument("--sequence-timeout-s", type=float, default=0.0,
+                   help="Kill a per-sequence subprocess after this many seconds; 0 disables timeout.")
+    p.add_argument("--resume", action="store_true", help="Reuse existing per-sequence candidates.csv when present.")
     p.add_argument("--per-sequence-top-n", type=int, default=80)
     p.add_argument("--top-n", type=int, default=200)
     p.add_argument("--max-revs", type=int, default=1)
+    
     p.add_argument("--max-departure-vinf-km-s", type=float, default=8.0)
     p.add_argument("--max-arrival-vinf-km-s", type=float, default=10.0)
     p.add_argument("--max-powered-flyby-dv-km-s", type=float, default=1.0)
@@ -273,19 +345,31 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sort-by", choices=["cost", "raw_sum", "departure", "arrival", "powered", "duration", "margin"], default="raw_sum")
     p.add_argument("--work-dir", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
-    p.add_argument("--jobs", type=int, default=multiprocessing.cpu_count(), help="Número de subprocessos em paralelo")
+    p.add_argument("--jobs", type=int, default=max(1, min(4, multiprocessing.cpu_count() // 2)), help="Número de subprocessos em paralelo")
+    p.add_argument("--empty-ok", action="store_true", help="Let per-sequence beam searches return 0 with an empty CSV when filters remove all routes.")
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    
+    # --- ADD THIS VALIDATION BLOCK ---
+    if args.snapshot_json is not None:
+        if not args.snapshot_json.exists():
+            raise FileNotFoundError(f"The snapshot file provided does not exist: {args.snapshot_json}")
+        if not args.snapshot_json.is_file():
+            raise ValueError(f"The snapshot path provided is a directory, not a file: {args.snapshot_json}")
+    # ---------------------------------
+
+    if args.start_et is None and args.snapshot_json is None:
+        raise SystemExit("Provide --start-et or --snapshot-json")
     seqs = enumerate_sequences(args.origin, args.target, args.allowed_flybys, args.max_flybys)
     args.work_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== SPICE FLYBY FAMILY SEARCH V0.1 (MULTIPROCESSING) ===")
     print(f"origin={norm_name(args.origin)} target={norm_name(args.target)} allowed={','.join(norm_name(x) for x in args.allowed_flybys)} max_flybys={args.max_flybys}")
-    print(f"sequences={len(seqs)} sort_by={args.sort_by} workers={args.jobs}")
+    print(f"sequences={len(seqs)} sort_by={args.sort_by} workers={args.jobs} grid_mode={args.grid_mode}")
 
     all_rows: List[Dict[str, str]] = []
     
@@ -298,8 +382,9 @@ def main() -> int:
         
         for future in as_completed(futures):
             idx, total_seqs, label, status, rows = future.result()
-            if status == "ok":
-                print(f"[{idx:02d}/{total_seqs:02d}] {label} | kept={len(rows)}")
+            if status in ("ok", "ok-resume"):
+                suffix = " resume" if status == "ok-resume" else ""
+                print(f"[{idx:02d}/{total_seqs:02d}] {label} | kept={len(rows)}{suffix}")
                 all_rows.extend(rows)
             elif status == "dry-run":
                 print(f"[{idx:02d}/{total_seqs:02d}] {label} | dry-run")
